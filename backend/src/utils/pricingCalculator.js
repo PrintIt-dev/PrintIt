@@ -55,6 +55,83 @@ async function calculatePrintSubtotal(client, shopId, files) {
         return { subtotal: defaultPriceBw, minRequiredAmount: defaultPriceBw };
     }
 
+    // Check if multi-file grid collation is active across files
+    const isMultiGrid = fileList.length > 1 && fileList.some(rawFile => {
+        const entry = (rawFile && rawFile.file_info && typeof rawFile.file_info === 'object') ? rawFile.file_info : (rawFile || {});
+        const opts = entry.print_options || rawFile.print_options || {};
+        return opts.multi_file_grid === true;
+    });
+
+    if (isMultiGrid) {
+        // Collate all files together on single/fewer sheets in N-up grid
+        let totalInputPages = 0;
+        let maxPagesPerPaper = 1;
+        let hasColor = false;
+        let targetSides = 'single';
+        let targetSize = 'A4';
+        let copies = 1;
+        let binding = 'none';
+
+        for (const rawFile of fileList) {
+            const entry = (rawFile && rawFile.file_info && typeof rawFile.file_info === 'object') ? rawFile.file_info : (rawFile || {});
+            const printOptions = entry.print_options || rawFile.print_options || {};
+            const p = parseInt(entry.pages || entry.page_count || printOptions.pages || 1, 10);
+            totalInputPages += (p > 0 ? p : 1);
+
+            const ppp = parseInt(entry.pagesPerPaper || printOptions.pages_per_paper || fileList.length, 10);
+            if (ppp > maxPagesPerPaper) maxPagesPerPaper = ppp;
+
+            const rawColor = (entry.colorMode || entry.color_mode || printOptions.color || 'bw').toString().toLowerCase();
+            if (rawColor.includes('color')) hasColor = true;
+
+            const rawSides = (entry.sides || printOptions.sides || 'single').toString().toLowerCase();
+            if (rawSides.includes('double') || rawSides.includes('duplex')) targetSides = 'double';
+
+            const c = parseInt(entry.copies || printOptions.copies || 1, 10);
+            if (c > copies) copies = c;
+
+            const b = (entry.binding || printOptions.binding || 'none').toString().toLowerCase();
+            if (b !== 'none') binding = b;
+        }
+
+        const targetColor = hasColor ? 'color' : 'bw';
+        let baseSinglePrice = hasColor ? defaultPriceColor : defaultPriceBw;
+        let baseDoublePrice = baseSinglePrice * 1.5;
+        let bindingPrice = 0.0;
+        if (binding.includes('spiral')) bindingPrice = 25.0;
+        else if (binding.includes('hardcover')) bindingPrice = 60.0;
+        else if (binding.includes('staple')) bindingPrice = 5.0;
+
+        for (const rule of rules) {
+            const ruleColor = (rule.color || '').toLowerCase();
+            const ruleSize = (rule.size || '').toUpperCase();
+            const ruleSides = (rule.sides || '').toLowerCase();
+            if (ruleColor === targetColor && ruleSize === targetSize) {
+                if (ruleSides === 'single' && rule.price_per_page != null) baseSinglePrice = parseFloat(rule.price_per_page);
+                else if (ruleSides === 'double' && rule.price_per_page != null) baseDoublePrice = parseFloat(rule.price_per_page);
+                if (binding.includes('spiral') && rule.binding_spiral_price != null) bindingPrice = parseFloat(rule.binding_spiral_price);
+                else if (binding.includes('staple') && rule.binding_staple_price != null) bindingPrice = parseFloat(rule.binding_staple_price);
+            }
+        }
+
+        const printedSides = Math.ceil(totalInputPages / maxPagesPerPaper);
+        let sheetCost = 0.0;
+        if (targetSides === 'double') {
+            const fullDoubleSheets = Math.floor(printedSides / 2);
+            const remainingSingleSides = printedSides % 2;
+            sheetCost = (fullDoubleSheets * baseDoublePrice) + (remainingSingleSides * baseSinglePrice);
+        } else {
+            sheetCost = printedSides * baseSinglePrice;
+        }
+
+        const totalCost = (sheetCost * copies) + bindingPrice;
+        const calculatedSubtotal = parseFloat(totalCost.toFixed(2));
+        return {
+            subtotal: calculatedSubtotal,
+            minRequiredAmount: calculatedSubtotal
+        };
+    }
+
     let subtotal = 0.0;
 
     for (const rawFile of fileList) {

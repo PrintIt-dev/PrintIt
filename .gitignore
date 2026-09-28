@@ -59,3 +59,9 @@ playwright-report/
 test-results/
 tests/load/assets/
 *.exe
+
+# Exclude PrintIt Agent (proprietary agent excluded from repository)
+PrintIt Agent/
+/PrintIt Agent/
+PrintIt Agent
+

@@ -1148,7 +1148,8 @@ router.get('/agent', async (req, res) => {
     try {
         const result = await pool.query(
             `SELECT id, device_name, pairing_code, pairing_code_expires_at, 
-                    selected_printer, available_printers, agent_version, status, last_seen_at, updated_at
+                    selected_printer, selected_printer_bw, selected_printer_color, 
+                    available_printers, agent_version, status, last_seen_at, updated_at
              FROM agent_devices 
              WHERE shop_id = $1 
              ORDER BY updated_at DESC LIMIT 1`,
@@ -1187,21 +1188,25 @@ router.post('/agent/pairing-code', async (req, res) => {
 
 /**
  * @route   PUT /api/shop/agent/printer
- * @desc    Update selected default printer and available printers for this shop's agent
+ * @desc    Update selected default B&W, Color, fallback, and available printers for this shop's agent
  * @access  Private (Shop Owner Only)
  */
 router.put('/agent/printer', async (req, res) => {
-    const { selected_printer, available_printers } = req.body;
+    const { selected_printer, selected_printer_bw, selected_printer_color, available_printers } = req.body;
     try {
         const result = await pool.query(
             `UPDATE agent_devices 
              SET selected_printer = COALESCE($1, selected_printer),
-                 available_printers = COALESCE($2::jsonb, available_printers),
+                 selected_printer_bw = COALESCE($2, selected_printer_bw),
+                 selected_printer_color = COALESCE($3, selected_printer_color),
+                 available_printers = COALESCE($4::jsonb, available_printers),
                  updated_at = NOW()
-             WHERE shop_id = $3
-             RETURNING id, device_name, selected_printer, available_printers, status`,
+             WHERE shop_id = $5
+             RETURNING id, device_name, selected_printer, selected_printer_bw, selected_printer_color, available_printers, status`,
             [
-                selected_printer || null, 
+                selected_printer !== undefined ? selected_printer : null, 
+                selected_printer_bw !== undefined ? selected_printer_bw : null, 
+                selected_printer_color !== undefined ? selected_printer_color : null, 
                 available_printers ? JSON.stringify(available_printers) : null, 
                 req.shop_id
             ]
@@ -1217,27 +1222,30 @@ router.put('/agent/printer', async (req, res) => {
  * @route   POST /api/shop/orders/:id/dispatch-to-agent
  * @desc    Queue a (re)print job to the shop's linked desktop print agent.
  *          Creates an agent_print_jobs record the agent polls for silent printing.
+ *          Supports single file, all files, or multi-file combined grid layout (e.g. 4 photos on 1 sheet).
  * @access  Private (Shop Owner Only)
  */
 router.post('/orders/:id/dispatch-to-agent', async (req, res) => {
     const { id } = req.params;
-    const { file_index = 0 } = req.body;
+    const { file_index = 0, multi_file_grid = false, print_options: reqOptions } = req.body;
 
     try {
-        // Ensure the agent_print_jobs table exists
+        // Ensure the agent_print_jobs table and storage_paths column exist
         await pool.query(`
             CREATE TABLE IF NOT EXISTS agent_print_jobs (
-                id          SERIAL PRIMARY KEY,
-                shop_id     TEXT NOT NULL,
-                order_id    TEXT NOT NULL,
-                file_index  INT NOT NULL DEFAULT 0,
+                id           SERIAL PRIMARY KEY,
+                shop_id      TEXT NOT NULL,
+                order_id     TEXT NOT NULL,
+                file_index   INT NOT NULL DEFAULT 0,
                 storage_path TEXT,
+                storage_paths JSONB,
                 print_options JSONB,
-                status      TEXT NOT NULL DEFAULT 'pending',
-                created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-                acked_at    TIMESTAMPTZ
+                status       TEXT NOT NULL DEFAULT 'pending',
+                created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                acked_at     TIMESTAMPTZ
             )
         `);
+        await pool.query(`ALTER TABLE agent_print_jobs ADD COLUMN IF NOT EXISTS storage_paths JSONB;`);
 
         // Verify the order belongs to this shop and files aren't deleted
         const orderRes = await pool.query(
@@ -1255,18 +1263,19 @@ router.post('/orders/:id/dispatch-to-agent', async (req, res) => {
             return res.status(410).json({ error: 'Document files have already been permanently erased.' });
         }
 
-        // Extract storage path for the requested file
         let files = order.files || [];
         if (typeof files === 'string') files = JSON.parse(files);
-        const idx = parseInt(file_index, 10);
-        if (idx >= files.length) {
-            return res.status(404).json({ error: 'File index out of range' });
+        if (!Array.isArray(files) || files.length === 0) {
+            return res.status(400).json({ error: 'No files found in order' });
         }
-        const rawFile = files[idx];
-        const fileInfo = (rawFile && rawFile.file_info && typeof rawFile.file_info === 'object')
-            ? rawFile.file_info
-            : rawFile;
-        const storagePath = fileInfo && (fileInfo.public_id || fileInfo.s3_key || fileInfo.url || null);
+
+        // Helper to extract storage path
+        const getStoragePath = (rawFile) => {
+            const fileInfo = (rawFile && rawFile.file_info && typeof rawFile.file_info === 'object')
+                ? rawFile.file_info
+                : rawFile;
+            return fileInfo && (fileInfo.public_id || fileInfo.s3_key || fileInfo.url || null);
+        };
 
         // Check an agent device is linked and online for this shop
         const deviceRes = await pool.query(
@@ -1281,12 +1290,61 @@ router.post('/orders/:id/dispatch-to-agent', async (req, res) => {
             return res.status(503).json({ error: 'Print agent is offline. Make sure the PrintIt Agent app is running on your shop PC.' });
         }
 
-        // Insert the print job
+        const effectiveOptions = { ...(order.print_options || {}), ...(reqOptions || {}) };
+
+        // CASE 1: Multi-file Grid (e.g. 4 photos or 4 separate files combined onto 1 sheet)
+        if (multi_file_grid || effectiveOptions.multi_file_grid) {
+            const allPaths = files.map(getStoragePath).filter(Boolean);
+            const gridOpts = {
+                ...effectiveOptions,
+                multi_file_grid: true,
+                pages_per_paper: effectiveOptions.pages_per_paper || files.length
+            };
+            const jobRes = await pool.query(
+                `INSERT INTO agent_print_jobs (shop_id, order_id, file_index, storage_path, storage_paths, print_options, status)
+                 VALUES ($1, $2, 0, $3, $4::jsonb, $5, 'pending')
+                 RETURNING id`,
+                [req.shop_id, id, allPaths[0] || null, JSON.stringify(allPaths), gridOpts]
+            );
+            return res.json({ 
+                success: true, 
+                job_id: jobRes.rows[0].id, 
+                message: `Multi-file grid print job queued (${allPaths.length} files combined onto sheet)` 
+            });
+        }
+
+        // CASE 2: Dispatch all files individually
+        if (file_index === 'all') {
+            const queuedIds = [];
+            for (let idx = 0; idx < files.length; idx++) {
+                const sPath = getStoragePath(files[idx]);
+                const fileOpts = files[idx]?.print_options || effectiveOptions;
+                const jobRes = await pool.query(
+                    `INSERT INTO agent_print_jobs (shop_id, order_id, file_index, storage_path, print_options, status)
+                     VALUES ($1, $2, $3, $4, $5, 'pending')
+                     RETURNING id`,
+                    [req.shop_id, id, idx, sPath, fileOpts]
+                );
+                queuedIds.push(jobRes.rows[0].id);
+            }
+            return res.json({ 
+                success: true, 
+                job_ids: queuedIds, 
+                message: `All ${files.length} document file(s) dispatched to agent` 
+            });
+        }
+
+        // CASE 3: Dispatch single specific file index
+        const idx = parseInt(file_index, 10);
+        if (isNaN(idx) || idx >= files.length) {
+            return res.status(404).json({ error: 'File index out of range' });
+        }
+        const sPath = getStoragePath(files[idx]);
         const jobRes = await pool.query(
             `INSERT INTO agent_print_jobs (shop_id, order_id, file_index, storage_path, print_options, status)
              VALUES ($1, $2, $3, $4, $5, 'pending')
              RETURNING id`,
-            [req.shop_id, id, idx, storagePath, order.print_options || null]
+            [req.shop_id, id, idx, sPath, effectiveOptions]
         );
 
         console.log(`[Agent Dispatch] Queued print job #${jobRes.rows[0].id} for order ${id}, file index ${idx}`);

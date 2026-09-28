@@ -33,6 +33,29 @@ const verifyRazorpaySignature = (orderId, paymentId, signature) => {
     return crypto.timingSafeEqual(expectedBuf, signatureBuf);
 };
 
+const extractInstructions = (body, files) => {
+    if (body.print_instructions && typeof body.print_instructions === 'string' && body.print_instructions.trim()) {
+        return body.print_instructions.trim();
+    }
+    if (body.instructions && typeof body.instructions === 'string' && body.instructions.trim()) {
+        return body.instructions.trim();
+    }
+    if (body.print_options && typeof body.print_options === 'object') {
+        if (body.print_options.print_instructions) return String(body.print_options.print_instructions).trim();
+        if (body.print_options.instructions) return String(body.print_options.instructions).trim();
+    }
+    if (Array.isArray(files) && files.length > 0) {
+        for (const f of files) {
+            if (f?.print_instructions && typeof f.print_instructions === 'string' && f.print_instructions.trim()) {
+                return f.print_instructions.trim();
+            }
+            if (f?.print_options?.print_instructions) return String(f.print_options.print_instructions).trim();
+            if (f?.print_options?.instructions) return String(f.print_options.instructions).trim();
+        }
+    }
+    return '';
+};
+
 // =================== GUEST ROUTES ===================
 
 // POST /api/payments/guest/create
@@ -79,9 +102,11 @@ router.post('/guest/verify', async (req, res) => {
         return res.status(400).json({ error: 'Invalid payment signature' });
     }
 
+    const reqPrintOptions = (typeof req.body.print_options === 'object' && req.body.print_options !== null) ? req.body.print_options : {};
     const pickupOptions = JSON.stringify({
-        pickup_type: req.body.pickup_type || 'express',
-        pickup_time: req.body.pickup_time || null
+        ...reqPrintOptions,
+        pickup_type: req.body.pickup_type || reqPrintOptions.pickup_type || 'express',
+        pickup_time: req.body.pickup_time || reqPrintOptions.pickup_time || null
     });
 
     // 2. Signature valid — save payment record & create print order
@@ -157,7 +182,7 @@ router.post('/guest/verify', async (req, res) => {
             ) VALUES ($1, NULL, $2, $3, $4, 'queued', $5, $6, 'captured', $7, $8, $9, $10, 'active')
             RETURNING *`,
             [
-                orderId, shop_id, JSON.stringify(files), pickupOptions, queue_position, amount_total, razorpay_payment_id, '', cancelToken, printMode
+                orderId, shop_id, JSON.stringify(files), pickupOptions, queue_position, amount_total, razorpay_payment_id, extractInstructions(req.body, files), cancelToken, printMode
             ]
         );
 
@@ -187,9 +212,11 @@ router.post('/guest/verify', async (req, res) => {
 // POST /api/payments/guest/fail
 router.post('/guest/fail', async (req, res) => {
     const { shop_id, files, amount_total, pickup_type, pickup_time } = req.body;
+    const reqPrintOptions = (typeof req.body.print_options === 'object' && req.body.print_options !== null) ? req.body.print_options : {};
     const pickupOptions = JSON.stringify({
-        pickup_type: pickup_type || 'express',
-        pickup_time: pickup_time || null
+        ...reqPrintOptions,
+        pickup_type: pickup_type || reqPrintOptions.pickup_type || 'express',
+        pickup_time: pickup_time || reqPrintOptions.pickup_time || null
     });
     try {
         const client = await pool.connect();
@@ -337,9 +364,11 @@ router.post('/verify', async (req, res) => {
         return res.status(400).json({ error: 'Invalid payment signature' });
     }
 
+    const reqPrintOptions = (typeof req.body.print_options === 'object' && req.body.print_options !== null) ? req.body.print_options : {};
     const pickupOptions = JSON.stringify({
-        pickup_type: req.body.pickup_type || 'express',
-        pickup_time: req.body.pickup_time || null
+        ...reqPrintOptions,
+        pickup_type: req.body.pickup_type || reqPrintOptions.pickup_type || 'express',
+        pickup_time: req.body.pickup_time || reqPrintOptions.pickup_time || null
     });
 
     // 2. Signature valid — save payment record to payments table and create print order in DB
@@ -436,6 +465,7 @@ router.post('/verify', async (req, res) => {
                 queue_position,
                 amount_total,
                 razorpay_payment_id,
+                extractInstructions(req.body, files),
                 printMode
             ]
         );
@@ -558,9 +588,11 @@ router.post('/wallet', async (req, res) => {
         );
         const queue_position = parseInt(queueResult.rows[0].count) + 1;
 
+        const reqPrintOptions = (typeof req.body.print_options === 'object' && req.body.print_options !== null) ? req.body.print_options : {};
         const pickupOptions = JSON.stringify({
-            pickup_type: req.body.pickup_type || 'express',
-            pickup_time: req.body.pickup_time || null
+            ...reqPrintOptions,
+            pickup_type: req.body.pickup_type || reqPrintOptions.pickup_type || 'express',
+            pickup_time: req.body.pickup_time || reqPrintOptions.pickup_time || null
         });
 
         const orderId = await generateOrderId(req.body.pickup_type || 'express', client);

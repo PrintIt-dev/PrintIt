@@ -68,6 +68,20 @@ class _SecurePaymentScreenState extends ConsumerState<SecurePaymentScreen> {
         'pickup_type': orderState.pickupType,
         'pickup_time': orderState.pickupTime?.toIso8601String(),
         'print_mode': orderState.printMode,
+        'print_options': {
+          'multi_file_grid': orderState.multiFileGrid,
+          'pages_per_paper': orderState.pagesPerPaper,
+          'repeat_image_on_grid': orderState.repeatImageOnGrid,
+          'color': orderState.colorMode == 'Color' ? 'color' : 'bw',
+          'size': 'A4',
+          'sides': orderState.sides,
+          'orientation': orderState.orientation,
+          'copies': orderState.copies,
+          'binding': orderState.binding,
+          'pages': orderState.pageRange.isNotEmpty ? orderState.pageRange : null,
+          'print_instructions': orderState.printInstructions,
+        },
+        'print_instructions': orderState.printInstructions,
       };
 
       if (isLoggedIn) {
@@ -133,6 +147,13 @@ class _SecurePaymentScreenState extends ConsumerState<SecurePaymentScreen> {
           'pickup_type': orderState.pickupType,
           'pickup_time': orderState.pickupTime?.toIso8601String(),
           'print_mode': orderState.printMode,
+          'print_options': {
+            'multi_file_grid': orderState.multiFileGrid,
+            'pages_per_paper': orderState.pagesPerPaper,
+            'repeat_image_on_grid': orderState.repeatImageOnGrid,
+            'color': orderState.colorMode == 'Color' ? 'color' : 'bw',
+            'pages': orderState.pageRange.isNotEmpty ? orderState.pageRange : null,
+          },
         });
       }
     } catch (e) {
@@ -166,8 +187,10 @@ class _SecurePaymentScreenState extends ConsumerState<SecurePaymentScreen> {
           'orientation': fileEntry.orientation,
           'copies': fileEntry.copies,
           'binding': fileEntry.binding == 'hardcover' ? 'spiral' : fileEntry.binding,
-          'pages_per_paper': fileEntry.pagesPerPaper,
+          'pages_per_paper': orderState.multiFileGrid ? orderState.pagesPerPaper : fileEntry.pagesPerPaper,
           'repeat_image_on_grid': fileEntry.repeatImageOnGrid,
+          'multi_file_grid': orderState.multiFileGrid,
+          'pages': orderState.pageRange.isNotEmpty ? orderState.pageRange : (fileEntry.pageRange.isNotEmpty ? fileEntry.pageRange : null),
         },
         'print_instructions': fileEntry.printInstructions,
       });

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import api from '../../core/api';
 
 const PrintAgent = () => {
@@ -10,6 +10,13 @@ const PrintAgent = () => {
   const [copied, setCopied] = useState(false);
   const [stationName, setStationName] = useState('Counter-Station-1');
 
+  // Printer Routing State
+  const [selectedBw, setSelectedBw] = useState('');
+  const [selectedColor, setSelectedColor] = useState('');
+  const [selectedFallback, setSelectedFallback] = useState('');
+  const [isSavingPrinters, setIsSavingPrinters] = useState(false);
+  const [saveSuccess, setSaveSuccess] = useState(false);
+
   useEffect(() => {
     fetchAgentStatus();
   }, []);
@@ -19,10 +26,14 @@ const PrintAgent = () => {
       setIsLoading(true);
       const res = await api.get('/shop/agent');
       if (res.data && res.data.device) {
-        setDevice(res.data.device);
-        if (res.data.device.pairing_code) {
-          setPairingCode(res.data.device.pairing_code);
-          setCodeExpiresAt(new Date(res.data.device.pairing_code_expires_at));
+        const dev = res.data.device;
+        setDevice(dev);
+        setSelectedBw(dev.selected_printer_bw || '');
+        setSelectedColor(dev.selected_printer_color || '');
+        setSelectedFallback(dev.selected_printer || '');
+        if (dev.pairing_code) {
+          setPairingCode(dev.pairing_code);
+          setCodeExpiresAt(new Date(dev.pairing_code_expires_at));
         }
       }
     } catch (err) {
@@ -58,6 +69,49 @@ const PrintAgent = () => {
     }
   };
 
+  const handleSavePrinters = async () => {
+    try {
+      setIsSavingPrinters(true);
+      await api.put('/shop/agent/printer', {
+        selected_printer: selectedFallback || null,
+        selected_printer_bw: selectedBw || null,
+        selected_printer_color: selectedColor || null
+      });
+      setSaveSuccess(true);
+      setTimeout(() => setSaveSuccess(false), 3000);
+      fetchAgentStatus();
+    } catch (err) {
+      alert('Failed to save printer routing: ' + (err.response?.data?.error || err.message));
+    } finally {
+      setIsSavingPrinters(false);
+    }
+  };
+
+  // Extract detected printers from the agent
+  const availablePrinters = useMemo(() => {
+    const list = new Set();
+    if (device?.available_printers) {
+      let raw = device.available_printers;
+      if (typeof raw === 'string') {
+        try { raw = JSON.parse(raw); } catch (e) { raw = []; }
+      }
+      if (Array.isArray(raw)) {
+        raw.forEach(p => {
+          const name = typeof p === 'string' ? p : p?.name;
+          if (name) list.add(name);
+        });
+      }
+    }
+    if (device?.selected_printer) list.add(device.selected_printer);
+    if (device?.selected_printer_bw) list.add(device.selected_printer_bw);
+    if (device?.selected_printer_color) list.add(device.selected_printer_color);
+
+    if (list.size === 0) {
+      list.add('Virtual Test Printer (Save to Disk)');
+    }
+    return Array.from(list);
+  }, [device]);
+
   const isOnline = device && device.status === 'ONLINE';
 
   return (
@@ -76,9 +130,10 @@ const PrintAgent = () => {
 
         <button
           onClick={fetchAgentStatus}
-          className="self-start sm:self-auto px-4 py-2 bg-surface-container border border-glass-edge/40 hover:border-primary/40 rounded-xl text-xs font-semibold text-on-surface flex items-center gap-2 cursor-pointer transition-all"
+          disabled={isLoading}
+          className="self-start sm:self-auto px-4 py-2 bg-surface-container border border-glass-edge/40 hover:border-primary/40 rounded-xl text-xs font-semibold text-on-surface flex items-center gap-2 cursor-pointer transition-all disabled:opacity-50"
         >
-          <span className="material-symbols-outlined text-sm">refresh</span>
+          <span className={`material-symbols-outlined text-sm ${isLoading ? 'animate-spin' : ''}`}>refresh</span>
           Refresh Status
         </button>
       </div>
@@ -104,12 +159,12 @@ const PrintAgent = () => {
               <div className="w-12 h-12 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center text-primary">
                 <span className="material-symbols-outlined text-2xl">desktop_windows</span>
               </div>
-              <div>
-                <h3 className="font-display font-bold text-on-surface text-base">
+              <div className="truncate">
+                <h3 className="font-display font-bold text-on-surface text-base truncate">
                   {device?.device_name || 'No Linked Station'}
                 </h3>
-                <p className="text-xs text-on-surface-variant">
-                  {device?.selected_printer ? `Printer: ${device.selected_printer}` : 'Default Windows Printer'}
+                <p className="text-xs text-on-surface-variant truncate">
+                  {device?.selected_printer ? `Fallback: ${device.selected_printer}` : 'Auto-detected spooler'}
                 </p>
               </div>
             </div>
@@ -131,6 +186,10 @@ const PrintAgent = () => {
                 <span>Silent Spooling:</span>
                 <span className="text-emerald-400 font-semibold">Enabled (SumatraPDF)</span>
               </div>
+              <div className="flex justify-between">
+                <span>Discovered Printers:</span>
+                <span className="text-primary font-semibold font-mono">{availablePrinters.length} installed</span>
+              </div>
             </div>
           </div>
 
@@ -138,17 +197,117 @@ const PrintAgent = () => {
           <div className="p-4 bg-surface-container/60 rounded-xl border border-glass-edge/30 text-xs text-on-surface-variant leading-relaxed">
             <span className="font-bold text-on-surface flex items-center gap-1.5 mb-1.5">
               <span className="material-symbols-outlined text-primary text-base">info</span>
-              How Automatic Printing Works
+              Smart Hardware Routing
             </span>
-            When a customer submits a print order, PrintIt's cloud notifies your desktop agent in real-time. The agent verifies document integrity, verifies silent spooling, and cleans temporary files immediately.
+            Incoming customer print jobs automatically route to your designated B&W or Color printer without manual switching.
           </div>
         </div>
 
-        {/* Right Column: Pairing Code Section */}
+        {/* Right Column: Routing Settings & Pairing Section */}
         <div className="lg:col-span-2 flex flex-col gap-6">
-          <div className="glass-panel p-6 sm:p-8 rounded-2xl border border-glass-edge shadow-lg flex flex-col gap-6">
+
+          {/* Dedicated Hardware Printer Routing Card */}
+          <div className="glass-panel p-6 sm:p-7 rounded-2xl border border-glass-edge shadow-lg flex flex-col gap-5">
+            <div className="flex items-center justify-between border-b border-glass-edge/20 pb-4">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center text-primary">
+                  <span className="material-symbols-outlined text-xl">tune</span>
+                </div>
+                <div>
+                  <h2 className="text-base font-display font-bold text-on-surface">Default Printer Routing</h2>
+                  <p className="text-xs text-on-surface-variant">Assign default physical hardware for Black & White vs. Color printing.</p>
+                </div>
+              </div>
+              {saveSuccess && (
+                <span className="inline-flex items-center gap-1 text-xs font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 px-3 py-1 rounded-full animate-fade-in">
+                  <span className="material-symbols-outlined text-sm">check_circle</span>
+                  Printers Synced!
+                </span>
+              )}
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {/* B&W Printer */}
+              <div className="bg-surface-container/70 p-4 rounded-xl border border-glass-edge/30 flex flex-col gap-2">
+                <label className="text-xs font-bold text-on-surface flex items-center gap-1.5">
+                  <span className="w-2.5 h-2.5 rounded-full bg-slate-400 inline-block"></span>
+                  Default B&W (Monochrome) Printer
+                </label>
+                <select
+                  value={selectedBw}
+                  onChange={(e) => setSelectedBw(e.target.value)}
+                  className="w-full bg-surface-container-high border border-glass-edge/40 rounded-lg px-3 py-2 text-xs font-semibold text-primary outline-none focus:border-primary cursor-pointer"
+                >
+                  <option value="">Auto-Route (System Default)</option>
+                  {availablePrinters.map((p) => (
+                    <option key={p} value={p}>
+                      {p}
+                    </option>
+                  ))}
+                </select>
+                <span className="text-[11px] text-on-surface-variant">Used for all single & double-sided B&W orders.</span>
+              </div>
+
+              {/* Color Printer */}
+              <div className="bg-surface-container/70 p-4 rounded-xl border border-glass-edge/30 flex flex-col gap-2">
+                <label className="text-xs font-bold text-on-surface flex items-center gap-1.5">
+                  <span className="w-2.5 h-2.5 rounded-full bg-amber-400 inline-block"></span>
+                  Default Color Printer
+                </label>
+                <select
+                  value={selectedColor}
+                  onChange={(e) => setSelectedColor(e.target.value)}
+                  className="w-full bg-surface-container-high border border-glass-edge/40 rounded-lg px-3 py-2 text-xs font-semibold text-primary outline-none focus:border-primary cursor-pointer"
+                >
+                  <option value="">Auto-Route (System Default)</option>
+                  {availablePrinters.map((p) => (
+                    <option key={p} value={p}>
+                      {p}
+                    </option>
+                  ))}
+                </select>
+                <span className="text-[11px] text-on-surface-variant">Used for color documents, photos & certificates.</span>
+              </div>
+
+              {/* Fallback Printer */}
+              <div className="sm:col-span-2 bg-surface-container/70 p-4 rounded-xl border border-glass-edge/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex-1">
+                  <label className="text-xs font-bold text-on-surface flex items-center gap-1.5 mb-1.5">
+                    <span className="material-symbols-outlined text-sm text-primary">print</span>
+                    General Fallback Printer
+                  </label>
+                  <select
+                    value={selectedFallback}
+                    onChange={(e) => setSelectedFallback(e.target.value)}
+                    className="w-full bg-surface-container-high border border-glass-edge/40 rounded-lg px-3 py-2 text-xs font-semibold text-on-surface outline-none focus:border-primary cursor-pointer"
+                  >
+                    <option value="">Auto (OS Default Spooler)</option>
+                    {availablePrinters.map((p) => (
+                      <option key={p} value={p}>
+                        {p}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="self-end sm:self-center pt-2 sm:pt-4">
+                  <button
+                    type="button"
+                    onClick={handleSavePrinters}
+                    disabled={isSavingPrinters}
+                    className="px-5 py-2.5 bg-primary text-on-primary font-bold text-xs rounded-xl hover:bg-primary/90 flex items-center gap-2 cursor-pointer shadow-lg shadow-primary/20 transition-all disabled:opacity-50"
+                  >
+                    <span className="material-symbols-outlined text-sm">{isSavingPrinters ? 'hourglass_top' : 'save'}</span>
+                    <span>{isSavingPrinters ? 'Saving...' : 'Save Printer Routing'}</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Pairing Code Section */}
+          <div className="glass-panel p-6 sm:p-7 rounded-2xl border border-glass-edge shadow-lg flex flex-col gap-6">
             <div>
-              <h2 className="text-lg font-display font-bold text-on-surface flex items-center gap-2">
+              <h2 className="text-base font-display font-bold text-on-surface flex items-center gap-2">
                 <span className="material-symbols-outlined text-primary">key</span>
                 Station Pairing Code
               </h2>

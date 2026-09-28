@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import api from '../core/api';
 
 const PrintReviewModal = ({ order, onClose, onApprove }) => {
@@ -28,7 +28,7 @@ const PrintReviewModal = ({ order, onClose, onApprove }) => {
     }).filter(Boolean);
   } catch (e) {}
 
-  // Parse initial print options: merge order-level and file-level options so customer choices are never lost
+  // Parse initial print options
   let initialOpts = {};
   try {
     initialOpts = typeof order?.print_options === 'string' 
@@ -53,8 +53,22 @@ const PrintReviewModal = ({ order, onClose, onApprove }) => {
   const [orientation, setOrientation] = useState(initialOpts.orientation || 'portrait');
   const [binding, setBinding] = useState(initialOpts.binding || 'none');
   const [pagesPerPaper, setPagesPerPaper] = useState(Number(initialOpts.pages_per_paper) || 1);
+  
+  // New features state
+  const [pageRange, setPageRange] = useState(initialOpts.pages || initialOpts.page_range || '');
+  const [padOddDuplex, setPadOddDuplex] = useState(initialOpts.pad_odd_duplex !== false);
+  const [repeatImageOnGrid, setRepeatImageOnGrid] = useState(initialOpts.repeat_image_on_grid ?? true);
+  
+  // Multi-file grid collation state (e.g. 4 photos / 4 files on 1 sheet)
+  const isMultiFile = files.length > 1;
+  const [isMultiGrid, setIsMultiGrid] = useState(Boolean(initialOpts.multi_file_grid) || isMultiFile);
+  const [gridPagesPerPaper, setGridPagesPerPaper] = useState(
+    Number(initialOpts.pages_per_paper) > 1 ? Number(initialOpts.pages_per_paper) : (files.length <= 2 ? 2 : 4)
+  );
+
+  // Target printer state
   const [selectedPrinter, setSelectedPrinter] = useState(
-    initialOpts.printer_name || localStorage.getItem('printit_last_selected_printer') || ''
+    initialOpts.printer_name || localStorage.getItem('printit_last_selected_printer') || 'auto'
   );
 
   // Connected Agent / Printer state
@@ -75,7 +89,7 @@ const PrintReviewModal = ({ order, onClose, onApprove }) => {
   const [showAddPrinter, setShowAddPrinter] = useState(false);
 
   // Available printers list from agent device, saved custom printers, and fallbacks
-  const availablePrinters = React.useMemo(() => {
+  const availablePrinters = useMemo(() => {
     const list = new Set();
     
     // 1. From agent device reported printers
@@ -91,50 +105,15 @@ const PrintReviewModal = ({ order, onClose, onApprove }) => {
         });
       }
     }
-    if (agentDevice?.selected_printer) {
-      list.add(agentDevice.selected_printer);
-    }
+    if (agentDevice?.selected_printer) list.add(agentDevice.selected_printer);
+    if (agentDevice?.selected_printer_bw) list.add(agentDevice.selected_printer_bw);
+    if (agentDevice?.selected_printer_color) list.add(agentDevice.selected_printer_color);
 
     // 2. From saved custom printers
     customPrinters.forEach(p => { if (p) list.add(p); });
 
-    // 3. Fallback standard options so list is never empty
-    if (list.size === 0) {
-      list.add('Default Windows Spooler');
-      list.add('Virtual Test Printer (output_prints/)');
-    }
-
     return Array.from(list);
   }, [agentDevice, customPrinters]);
-
-  // Synchronize initial selected printer
-  useEffect(() => {
-    if (selectedPrinter && availablePrinters.includes(selectedPrinter)) return;
-
-    if (availablePrinters.length > 0) {
-      if (colorMode === 'color') {
-        const colorPrinter = availablePrinters.find(p => /color|colour|epson|photo|deskjet|inkjet/i.test(p));
-        if (colorPrinter) {
-          setSelectedPrinter(colorPrinter);
-          return;
-        }
-      } else if (colorMode === 'bw') {
-        const monoPrinter = availablePrinters.find(p => /laser|mono|heavy|xerox|hp/i.test(p) && !/color/i.test(p));
-        if (monoPrinter) {
-          setSelectedPrinter(monoPrinter);
-          return;
-        }
-      }
-
-      if (agentDevice?.selected_printer && availablePrinters.includes(agentDevice.selected_printer)) {
-        setSelectedPrinter(agentDevice.selected_printer);
-      } else {
-        setSelectedPrinter(availablePrinters[0]);
-      }
-    } else if (agentDevice?.selected_printer) {
-      setSelectedPrinter(agentDevice.selected_printer);
-    }
-  }, [agentDevice, availablePrinters, colorMode, selectedPrinter]);
 
   useEffect(() => {
     let isMounted = true;
@@ -169,7 +148,14 @@ const PrintReviewModal = ({ order, onClose, onApprove }) => {
 
   const handleApprove = async () => {
     setIsSubmitting(true);
-    const targetPrinter = selectedPrinter || agentDevice?.selected_printer || availablePrinters[0] || 'Default Windows Spooler';
+    
+    // If 'auto' is selected or left empty, send undefined so the agent auto-routes based on B&W/Color
+    const targetPrinter = (selectedPrinter && selectedPrinter !== 'auto' && selectedPrinter !== 'Default Windows Spooler')
+      ? selectedPrinter
+      : undefined;
+
+    const effectivePagesPerPaper = isMultiGrid ? gridPagesPerPaper : pagesPerPaper;
+
     const verifiedOptions = {
       ...initialOpts,
       color: colorMode,
@@ -178,13 +164,19 @@ const PrintReviewModal = ({ order, onClose, onApprove }) => {
       sides,
       orientation,
       binding,
-      pages_per_paper: pagesPerPaper,
+      pages_per_paper: effectivePagesPerPaper,
+      pages: pageRange?.trim() || undefined,
+      pad_odd_duplex: sides === 'double' ? padOddDuplex : false,
+      repeat_image_on_grid: repeatImageOnGrid,
+      multi_file_grid: isMultiGrid && isMultiFile,
       printer_name: targetPrinter
     };
 
-    try {
-      localStorage.setItem('printit_last_selected_printer', targetPrinter);
-    } catch (e) {}
+    if (targetPrinter) {
+      try {
+        localStorage.setItem('printit_last_selected_printer', targetPrinter);
+      } catch (e) {}
+    }
 
     try {
       await onApprove(order.order_id, verifiedOptions);
@@ -226,7 +218,7 @@ const PrintReviewModal = ({ order, onClose, onApprove }) => {
                   </span>
                 )}
               </div>
-              <p className="text-xs text-on-surface-variant">Review customer specifications and target printer before spooling.</p>
+              <p className="text-xs text-on-surface-variant">Review document specifications, collation, and printer routing before spooling.</p>
             </div>
           </div>
           <button 
@@ -254,7 +246,7 @@ const PrintReviewModal = ({ order, onClose, onApprove }) => {
               </div>
               <div>
                 <div className="flex items-center gap-2">
-                  <span className="text-xs font-semibold text-on-surface">Target Printer Station:</span>
+                  <span className="text-xs font-semibold text-on-surface">Target Print Station:</span>
                   <span className="text-xs font-bold text-primary">
                     {agentDevice?.device_name || 'Counter-Station-1'}
                   </span>
@@ -268,7 +260,7 @@ const PrintReviewModal = ({ order, onClose, onApprove }) => {
                   </span>
                 </div>
                 <p className="text-xs text-on-surface-variant mt-0.5">
-                  Assigned Hardware: <strong className="text-primary font-bold">{selectedPrinter || agentDevice?.selected_printer || 'Default Windows Spooler'}</strong>
+                  B&amp;W Default: <strong className="text-primary font-bold">{agentDevice?.selected_printer_bw || 'Auto'}</strong> | Color Default: <strong className="text-primary font-bold">{agentDevice?.selected_printer_color || 'Auto'}</strong>
                 </p>
               </div>
             </div>
@@ -312,11 +304,63 @@ const PrintReviewModal = ({ order, onClose, onApprove }) => {
             </div>
           )}
 
+          {/* NEW: Multi-File Collation Card (When >1 file is uploaded) */}
+          {isMultiFile && (
+            <div className="bg-primary/10 p-4 rounded-xl border border-primary/30 flex flex-col gap-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="material-symbols-outlined text-primary text-xl">auto_awesome_mosaic</span>
+                  <div>
+                    <h4 className="text-xs font-bold text-on-surface">Multi-File Collation ({files.length} Uploaded Documents)</h4>
+                    <p className="text-[11px] text-on-surface-variant">Combine multiple uploaded files onto a single sheet grid.</p>
+                  </div>
+                </div>
+                <label className="flex items-center gap-2 cursor-pointer bg-surface-container px-3 py-1.5 rounded-lg border border-glass-edge/40">
+                  <span className="text-xs font-semibold text-primary">Combine on 1 Sheet</span>
+                  <input
+                    type="checkbox"
+                    checked={isMultiGrid}
+                    onChange={(e) => setIsMultiGrid(e.target.checked)}
+                    className="w-4 h-4 rounded text-primary focus:ring-primary accent-primary cursor-pointer"
+                  />
+                </label>
+              </div>
+
+              {isMultiGrid && (
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between pt-2 border-t border-primary/20 gap-2 text-xs">
+                  <span className="text-on-surface-variant font-medium">
+                    Grid tiling for {files.length} files:
+                  </span>
+                  <div className="flex items-center gap-2">
+                    {[
+                      { val: 2, label: '2-up (2/sheet)' },
+                      { val: 4, label: '4-up (4/sheet)' },
+                      { val: 6, label: '6-up (6/sheet)' }
+                    ].map(({ val, label }) => (
+                      <button
+                        key={val}
+                        type="button"
+                        onClick={() => setGridPagesPerPaper(val)}
+                        className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                          gridPagesPerPaper === val
+                            ? 'bg-primary text-on-primary shadow-sm ring-2 ring-primary/30'
+                            : 'bg-surface-container text-on-surface hover:bg-surface-variant border border-glass-edge/40'
+                        }`}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Print Settings Grid */}
           <div className="space-y-4">
             <h3 className="text-xs font-bold uppercase tracking-wider text-primary flex items-center gap-1.5">
               <span className="material-symbols-outlined text-[16px]">tune</span>
-              Verify Print Settings
+              Print Specifications
             </h3>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -470,37 +514,88 @@ const PrintReviewModal = ({ order, onClose, onApprove }) => {
                 </select>
               </div>
 
-              {/* Pages Per Sheet (N-Up Grid) */}
+              {/* NEW: Selective Page Range Input */}
               <div className="bg-surface-container-high/30 p-3.5 rounded-xl border border-glass-edge/30 sm:col-span-2">
-                <div className="flex items-center justify-between mb-2">
-                  <label className="block text-xs font-bold text-on-surface">Pages Per Sheet (Layout Grid)</label>
-                  {pagesPerPaper > 1 && (
-                    <span className="text-[10px] font-bold uppercase text-primary bg-primary/10 px-2 py-0.5 rounded border border-primary/20">
-                      {pagesPerPaper} Pages Tiled On 1 Sheet
-                    </span>
-                  )}
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="text-xs font-bold text-on-surface flex items-center gap-1.5">
+                    <span className="material-symbols-outlined text-[16px] text-primary">filter_none</span>
+                    Selective Page Printing (Optional)
+                  </label>
+                  <span className="text-[11px] text-on-surface-variant">e.g. 1-5, 8, 11-14 or leave blank for All</span>
                 </div>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                  {[
-                    { val: 1, label: 'Standard (1 Page)' },
-                    { val: 2, label: '2 Pages (2-up)' },
-                    { val: 4, label: '4 Pages (4-up)' },
-                    { val: 6, label: '6 Pages (6-up)' }
-                  ].map(({ val, label }) => (
-                    <button
-                      key={val}
-                      type="button"
-                      onClick={() => setPagesPerPaper(val)}
-                      className={`py-2 px-3 rounded-lg text-xs font-bold flex items-center justify-center transition-all cursor-pointer ${
-                        pagesPerPaper === val
-                          ? 'bg-primary text-on-primary shadow-sm ring-2 ring-primary/40'
-                          : 'bg-surface-container hover:bg-surface-variant text-on-surface border border-glass-edge/40'
-                      }`}
-                    >
-                      {label}
-                    </button>
-                  ))}
+                <input
+                  type="text"
+                  value={pageRange}
+                  onChange={(e) => setPageRange(e.target.value)}
+                  placeholder="Leave empty to print all document pages"
+                  className="w-full py-2 px-3 bg-surface-container border border-glass-edge/40 rounded-lg text-xs font-medium text-on-surface focus:outline-none focus:ring-1 focus:ring-primary"
+                />
+              </div>
+
+              {/* Pages Per Sheet (Single-file N-Up Grid) - only when not in multi-grid */}
+              {!isMultiGrid && (
+                <div className="bg-surface-container-high/30 p-3.5 rounded-xl border border-glass-edge/30 sm:col-span-2">
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="block text-xs font-bold text-on-surface">Pages Per Sheet (Layout Grid)</label>
+                    {pagesPerPaper > 1 && (
+                      <span className="text-[10px] font-bold uppercase text-primary bg-primary/10 px-2 py-0.5 rounded border border-primary/20">
+                        {pagesPerPaper} Pages Tiled On 1 Sheet
+                      </span>
+                    )}
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                    {[
+                      { val: 1, label: 'Standard (1 Page)' },
+                      { val: 2, label: '2 Pages (2-up)' },
+                      { val: 4, label: '4 Pages (4-up)' },
+                      { val: 6, label: '6 Pages (6-up)' }
+                    ].map(({ val, label }) => (
+                      <button
+                        key={val}
+                        type="button"
+                        onClick={() => setPagesPerPaper(val)}
+                        className={`py-2 px-3 rounded-lg text-xs font-bold flex items-center justify-center transition-all cursor-pointer ${
+                          pagesPerPaper === val
+                            ? 'bg-primary text-on-primary shadow-sm ring-2 ring-primary/40'
+                            : 'bg-surface-container hover:bg-surface-variant text-on-surface border border-glass-edge/40'
+                        }`}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
                 </div>
+              )}
+
+              {/* Duplex Padding & Repeat Image Toggles */}
+              <div className="sm:col-span-2 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {sides === 'double' && (
+                  <label className="bg-surface-container-high/30 p-3 rounded-xl border border-glass-edge/30 flex items-center justify-between cursor-pointer">
+                    <div>
+                      <span className="block text-xs font-bold text-on-surface">Duplex Sheet Padding</span>
+                      <span className="text-[11px] text-on-surface-variant">Pad blank sheet for odd-page jobs</span>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={padOddDuplex}
+                      onChange={(e) => setPadOddDuplex(e.target.checked)}
+                      className="w-4 h-4 rounded text-primary focus:ring-primary accent-primary cursor-pointer"
+                    />
+                  </label>
+                )}
+
+                <label className="bg-surface-container-high/30 p-3 rounded-xl border border-glass-edge/30 flex items-center justify-between cursor-pointer">
+                  <div>
+                    <span className="block text-xs font-bold text-on-surface">Repeat Image on Grid</span>
+                    <span className="text-[11px] text-on-surface-variant">Fill all cells for 1-page photo/cards</span>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={repeatImageOnGrid}
+                    onChange={(e) => setRepeatImageOnGrid(e.target.checked)}
+                    className="w-4 h-4 rounded text-primary focus:ring-primary accent-primary cursor-pointer"
+                  />
+                </label>
               </div>
 
               {/* Destination Hardware Printer */}
@@ -508,14 +603,9 @@ const PrintReviewModal = ({ order, onClose, onApprove }) => {
                 <div className="flex items-center justify-between mb-2">
                   <label className="text-xs font-bold text-on-surface flex items-center gap-1.5">
                     <span className="material-symbols-outlined text-[16px] text-primary">local_printshop</span>
-                    Destination Printer Hardware
+                    Target Hardware Printer
                   </label>
                   <div className="flex items-center gap-2">
-                    {selectedPrinter && selectedPrinter === agentDevice?.selected_printer && (
-                      <span className="text-[10px] uppercase font-bold text-emerald-400 bg-emerald-500/15 px-2 py-0.5 rounded-full border border-emerald-500/30">
-                        Station Default
-                      </span>
-                    )}
                     <button
                       type="button"
                       onClick={() => setShowAddPrinter(!showAddPrinter)}
@@ -524,7 +614,7 @@ const PrintReviewModal = ({ order, onClose, onApprove }) => {
                       <span className="material-symbols-outlined text-[14px]">
                         {showAddPrinter ? 'close' : 'add'}
                       </span>
-                      {showAddPrinter ? 'Cancel' : 'Add Printer'}
+                      {showAddPrinter ? 'Cancel' : 'Add Custom'}
                     </button>
                   </div>
                 </div>
@@ -554,16 +644,21 @@ const PrintReviewModal = ({ order, onClose, onApprove }) => {
                   onChange={(e) => setSelectedPrinter(e.target.value)}
                   className="w-full py-2.5 px-3 bg-surface-container border border-glass-edge/40 rounded-lg text-xs font-semibold text-primary focus:outline-none focus:ring-1 focus:ring-primary cursor-pointer"
                 >
+                  <option value="auto">
+                    ⚡ Auto-Route (Routes B&amp;W to Mono, Color to Color Hardware)
+                  </option>
                   {availablePrinters.map((p) => (
                     <option key={p} value={p} className="bg-surface-container text-on-surface">
-                      {p} {p === agentDevice?.selected_printer ? '— (Default Station Printer)' : ''}
+                      {p}
                     </option>
                   ))}
                 </select>
 
                 <p className="text-[11px] text-on-surface-variant mt-1.5 flex items-center gap-1">
                   <span className="material-symbols-outlined text-[13px] text-primary">info</span>
-                  The PrintIt desktop agent will route this order directly to: <strong className="text-primary font-bold ml-1">{selectedPrinter || 'Default Spooler'}</strong>
+                  {selectedPrinter === 'auto'
+                    ? `Auto-routing active: ${colorMode === 'color' ? '🎨 Will route to Color Printer' : '⚫ Will route to B&W Printer'}`
+                    : `Direct routing to: ${selectedPrinter}`}
                 </p>
               </div>
 
@@ -574,11 +669,11 @@ const PrintReviewModal = ({ order, onClose, onApprove }) => {
           <div className="space-y-2">
             <div className="flex items-center justify-between">
               <label className="block text-xs font-bold text-on-surface-variant uppercase tracking-wider">
-                Document Files
+                Document Files ({files.length})
               </label>
-              <span className="text-[11px] text-amber-400 font-semibold flex items-center gap-1">
+              <span className="text-[11px] text-emerald-400 font-semibold flex items-center gap-1">
                 <span className="material-symbols-outlined text-[13px]">lock</span>
-                Direct Spool Only
+                Zero-Trace Spooling
               </span>
             </div>
             <div className="space-y-2">
@@ -598,7 +693,7 @@ const PrintReviewModal = ({ order, onClose, onApprove }) => {
                     </span>
                     <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 px-2 py-0.5 rounded-full">
                       <span className="material-symbols-outlined text-[12px]">security</span>
-                      Protected
+                      Verified
                     </span>
                   </div>
                 </div>
@@ -612,7 +707,7 @@ const PrintReviewModal = ({ order, onClose, onApprove }) => {
         <div className="p-4 border-t border-outline-variant/60 bg-surface-container-high/40 flex flex-col sm:flex-row items-center justify-between gap-3">
           <div className="flex items-center gap-2 text-xs text-amber-400 select-none self-start sm:self-center">
             <span className="material-symbols-outlined text-[16px]">verified_user</span>
-            <span className="font-semibold text-[11px] tracking-tight">Zero-Trace Secure Print · Files Spooled Directly To Printer</span>
+            <span className="font-semibold text-[11px] tracking-tight">Silent Agent Spooling · Temporary files deleted immediately</span>
           </div>
 
           <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
@@ -634,12 +729,12 @@ const PrintReviewModal = ({ order, onClose, onApprove }) => {
               {isSubmitting ? (
                 <>
                   <span className="w-4 h-4 border-2 border-on-primary border-t-transparent rounded-full animate-spin"></span>
-                  <span>Assigning Printer &amp; Spooling...</span>
+                  <span>Assigning &amp; Spooling...</span>
                 </>
               ) : (
                 <>
                   <span className="material-symbols-outlined text-[18px]">local_printshop</span>
-                  <span>Accept &amp; Print Document</span>
+                  <span>{isMultiGrid ? `Accept & Print Combined (${files.length} Files)` : 'Accept & Print Document'}</span>
                 </>
               )}
             </button>

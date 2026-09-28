@@ -80,11 +80,32 @@ const handleStatusUpdate = async (orderId, newStatus) => {
 
   const handlePrint = async (orderId) => {
     try {
+      const order = orders.find(o => o.order_id === orderId || o.id === orderId);
+      let isMultiGrid = false;
+      let hasMultipleFiles = false;
+      if (order) {
+        let opts = {};
+        try { opts = typeof order.print_options === 'string' ? JSON.parse(order.print_options) : (order.print_options || {}); } catch(e) {}
+        isMultiGrid = opts.multi_file_grid === true;
+        let files = order.files;
+        if (typeof files === 'string') {
+          try { files = JSON.parse(files); } catch(e) { files = []; }
+        }
+        if (Array.isArray(files) && files.length > 1) {
+          hasMultipleFiles = true;
+        }
+      }
+
       // Try dispatching to the linked desktop print agent first
-      await api.post(`/shop/orders/${orderId}/dispatch-to-agent`, { file_index: 0 });
+      await api.post(`/shop/orders/${orderId}/dispatch-to-agent`, { 
+        file_index: isMultiGrid ? 0 : (hasMultipleFiles ? 'all' : 0),
+        multi_file_grid: isMultiGrid
+      });
       // Show a brief non-blocking confirmation
       const toast = document.createElement('div');
-      toast.textContent = '🖨️ Print job sent to agent';
+      toast.textContent = isMultiGrid 
+        ? '🖨️ Combined grid print job sent to agent' 
+        : (hasMultipleFiles ? '🖨️ Multi-document print jobs sent to agent' : '🖨️ Print job sent to agent');
       toast.style.cssText = 'position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#1e293b;color:#e2e8f0;padding:10px 20px;border-radius:10px;font-size:13px;font-weight:600;z-index:9999;box-shadow:0 4px 20px rgba(0,0,0,0.4);border:1px solid rgba(255,255,255,0.08);';
       document.body.appendChild(toast);
       setTimeout(() => toast.remove(), 3000);

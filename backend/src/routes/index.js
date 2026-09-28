@@ -266,7 +266,7 @@ router.get('/agent/jobs', async (req, res) => {
 
     // Fetch pending jobs for this shop (created in last 2 hours, not yet acked)
     const jobsRes = await pool.query(
-      `SELECT id, order_id, file_index, storage_path, print_options
+      `SELECT id, order_id, file_index, storage_path, storage_paths, print_options
        FROM agent_print_jobs
        WHERE shop_id = $1 AND status = 'pending' AND created_at > NOW() - INTERVAL '2 hours'
        ORDER BY created_at ASC

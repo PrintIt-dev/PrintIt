@@ -283,6 +283,122 @@ class _DocumentConfigScreenState extends ConsumerState<DocumentConfigScreen> {
                             ),
                             const SizedBox(height: 16),
 
+                            // Multi-file Grid Collation Card (when 2+ files/photos uploaded)
+                            if (orderState.files.length > 1) ...[
+                              Container(
+                                padding: const EdgeInsets.all(16),
+                                decoration: BoxDecoration(
+                                  color: isDark
+                                      ? const Color(0xFF121929).withValues(alpha: 0.90)
+                                      : Colors.white.withValues(alpha: 0.88),
+                                  borderRadius: BorderRadius.circular(20),
+                                  border: Border.all(
+                                    color: orderState.multiFileGrid
+                                        ? const Color(0xFF0284C7).withValues(alpha: 0.5)
+                                        : (isDark ? const Color(0xFF334155).withValues(alpha: 0.50) : Colors.white.withValues(alpha: 0.75)),
+                                    width: 1.0,
+                                  ),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: isDark
+                                          ? Colors.black.withValues(alpha: 0.25)
+                                          : const Color(0xFF0C4A6E).withValues(alpha: 0.05),
+                                      blurRadius: 16,
+                                      offset: const Offset(0, 5),
+                                    ),
+                                  ],
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      children: [
+                                        Container(
+                                          width: 40,
+                                          height: 40,
+                                          decoration: BoxDecoration(
+                                            color: orderState.multiFileGrid
+                                                ? (isDark ? const Color(0xFF0C4A6E) : const Color(0xFFE0F2FE))
+                                                : (isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9)),
+                                            borderRadius: BorderRadius.circular(12),
+                                          ),
+                                          child: Icon(
+                                            Icons.auto_awesome_mosaic_rounded,
+                                            size: 22,
+                                            color: orderState.multiFileGrid
+                                                ? const Color(0xFF0284C7)
+                                                : (isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B)),
+                                          ),
+                                        ),
+                                        const SizedBox(width: 14),
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            children: [
+                                              Text(
+                                                'Combine on 1 Sheet (Grid)',
+                                                style: TextStyle(
+                                                  color: isDark ? Colors.white : const Color(0xFF0F172A),
+                                                  fontSize: 14,
+                                                  fontWeight: FontWeight.w600,
+                                                ),
+                                              ),
+                                              const SizedBox(height: 2),
+                                              Text(
+                                                'Tile all ${orderState.files.length} uploaded files/photos onto a single sheet',
+                                                style: TextStyle(
+                                                  color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+                                                  fontSize: 12,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                        Switch.adaptive(
+                                          value: orderState.multiFileGrid,
+                                          activeTrackColor: const Color(0xFF0284C7),
+                                          onChanged: (val) {
+                                            ref.read(orderProvider.notifier).setMultiFileGrid(val);
+                                            if (val && orderState.pagesPerPaper < 2) {
+                                              ref.read(orderProvider.notifier).setPagesPerPaper(orderState.files.length <= 2 ? 2 : 4);
+                                            }
+                                          },
+                                        ),
+                                      ],
+                                    ),
+                                    if (orderState.multiFileGrid) ...[
+                                      const SizedBox(height: 14),
+                                      const Divider(height: 1, color: Colors.white12),
+                                      const SizedBox(height: 12),
+                                      Row(
+                                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                        children: [
+                                          Text(
+                                            'Grid layout blocks:',
+                                            style: TextStyle(
+                                              fontSize: 12,
+                                              fontWeight: FontWeight.w500,
+                                              color: isDark ? const Color(0xFFCBD5E1) : const Color(0xFF334155),
+                                            ),
+                                          ),
+                                          Row(
+                                            children: [
+                                              _buildGridChoiceChip(ref, 2, '2-up', orderState.pagesPerPaper == 2, isDark),
+                                              const SizedBox(width: 6),
+                                              _buildGridChoiceChip(ref, 4, '4-up', orderState.pagesPerPaper == 4, isDark),
+                                              const SizedBox(width: 6),
+                                              _buildGridChoiceChip(ref, 6, '6-up', orderState.pagesPerPaper == 6, isDark),
+                                            ],
+                                          ),
+                                        ],
+                                      ),
+                                    ],
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(height: 16),
+                            ],
+
                             // Repeat Photo Across Sheet Card
                             if (isImageFile && orderState.pagesPerPaper > 1) ...[
                               Container(
@@ -764,6 +880,75 @@ class _DocumentConfigScreenState extends ConsumerState<DocumentConfigScreen> {
                                     ),
                                   ],
                                 ),
+                              ),
+                            ),
+                            const SizedBox(height: 20),
+
+                            // Page Range Selection (Optional)
+                            Padding(
+                              padding: const EdgeInsets.only(left: 2, bottom: 8),
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Text(
+                                    'Page Range (Optional)',
+                                    style: TextStyle(
+                                      color: isDark ? const Color(0xFFF1F5F9) : const Color(0xFF0F172A),
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                  Text(
+                                    'e.g. 1-5, 8',
+                                    style: TextStyle(
+                                      color: isDark ? const Color(0xFF64748B) : const Color(0xFF94A3B8),
+                                      fontSize: 11,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                              decoration: BoxDecoration(
+                                color: isDark
+                                    ? const Color(0xFF0F172A).withValues(alpha: 0.55)
+                                    : Colors.white.withValues(alpha: 0.65),
+                                borderRadius: BorderRadius.circular(18),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: isDark ? Colors.black.withValues(alpha: 0.15) : const Color(0x1064748B),
+                                    blurRadius: 8,
+                                  ),
+                                ],
+                              ),
+                              child: Row(
+                                children: [
+                                  Icon(
+                                    Icons.filter_none_rounded,
+                                    size: 18,
+                                    color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: TextField(
+                                      onChanged: (val) => ref.read(orderProvider.notifier).setPageRange(val),
+                                      style: TextStyle(
+                                        color: isDark ? Colors.white : const Color(0xFF0F172A),
+                                        fontSize: 13,
+                                      ),
+                                      decoration: InputDecoration(
+                                        hintText: 'All pages (or specify: 1, 3-5)',
+                                        hintStyle: TextStyle(
+                                          color: isDark ? const Color(0xFF64748B) : const Color(0xFF94A3B8),
+                                          fontSize: 13,
+                                        ),
+                                        border: InputBorder.none,
+                                        contentPadding: EdgeInsets.zero,
+                                      ),
+                                    ),
+                                  ),
+                                ],
                               ),
                             ),
                             const SizedBox(height: 20),
@@ -1377,6 +1562,36 @@ class _DocumentConfigScreenState extends ConsumerState<DocumentConfigScreen> {
             color: isSelected ? Colors.white : const Color(0xFFCBD5E1),
             fontSize: 11,
             fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildGridChoiceChip(WidgetRef ref, int count, String label, bool isSelected, bool isDark) {
+    return GestureDetector(
+      onTap: () {
+        HapticFeedback.selectionClick();
+        ref.read(orderProvider.notifier).setPagesPerPaper(count);
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+        decoration: BoxDecoration(
+          color: isSelected
+              ? const Color(0xFF0284C7)
+              : (isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9)),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: isSelected ? const Color(0xFF38BDF8) : (isDark ? Colors.white12 : const Color(0xFFE2E8F0)),
+            width: 1,
+          ),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.w600,
+            color: isSelected ? Colors.white : (isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B)),
           ),
         ),
       ),

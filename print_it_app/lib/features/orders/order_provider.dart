@@ -14,6 +14,8 @@ class FileEntry {
   final String orientation;
   final String sides;
   final bool repeatImageOnGrid;
+  final bool multiFileGrid;
+  final String pageRange;
 
   FileEntry({
     required this.file,
@@ -26,6 +28,8 @@ class FileEntry {
     this.orientation = 'portrait',
     this.sides = 'single',
     this.repeatImageOnGrid = true,
+    this.multiFileGrid = false,
+    this.pageRange = '',
   });
 
   FileEntry copyWith({
@@ -39,6 +43,8 @@ class FileEntry {
     String? orientation,
     String? sides,
     bool? repeatImageOnGrid,
+    bool? multiFileGrid,
+    String? pageRange,
   }) {
     return FileEntry(
       file: file ?? this.file,
@@ -51,6 +57,8 @@ class FileEntry {
       orientation: orientation ?? this.orientation,
       sides: sides ?? this.sides,
       repeatImageOnGrid: repeatImageOnGrid ?? this.repeatImageOnGrid,
+      multiFileGrid: multiFileGrid ?? this.multiFileGrid,
+      pageRange: pageRange ?? this.pageRange,
     );
   }
 }
@@ -70,6 +78,8 @@ class OrderState {
   final String orientation;
   final String sides;
   final bool repeatImageOnGrid;
+  final bool multiFileGrid;
+  final String pageRange;
   final String pickupType; // 'express' or 'scheduled'
   final DateTime? pickupTime;
   final String printMode; // 'normal' or 'secure'
@@ -97,6 +107,8 @@ class OrderState {
     this.orientation = 'portrait',
     this.sides = 'single',
     this.repeatImageOnGrid = true,
+    this.multiFileGrid = false,
+    this.pageRange = '',
     this.pickupType = 'express',
     this.pickupTime,
     this.printMode = 'secure',
@@ -118,6 +130,17 @@ class OrderState {
 
   /// Total physical paper sheets across all configured files (taking duplex/back-to-back into account)
   int get totalSheets {
+    if (multiFileGrid && files.length > 1) {
+      int sumPages = 0;
+      for (final f in files) {
+        sumPages += f.pages > 0 ? f.pages : 1;
+      }
+      final ppp = pagesPerPaper > 0 ? pagesPerPaper : files.length;
+      final printedSides = (sumPages / ppp).ceil();
+      final sheetsPerCopy = sides == 'double' ? (printedSides / 2).ceil() : printedSides;
+      final sum = sheetsPerCopy * (copies > 0 ? copies : 1);
+      return sum > 0 ? sum : 1;
+    }
     if (files.isNotEmpty) {
       int sum = 0;
       for (final f in files) {
@@ -171,6 +194,8 @@ class OrderState {
     String? orientation,
     String? sides,
     bool? repeatImageOnGrid,
+    bool? multiFileGrid,
+    String? pageRange,
     String? pickupType,
     DateTime? pickupTime,
     String? printMode,
@@ -198,6 +223,8 @@ class OrderState {
       orientation: orientation ?? this.orientation,
       sides: sides ?? this.sides,
       repeatImageOnGrid: repeatImageOnGrid ?? this.repeatImageOnGrid,
+      multiFileGrid: multiFileGrid ?? this.multiFileGrid,
+      pageRange: pageRange ?? this.pageRange,
       pickupType: pickupType ?? this.pickupType,
       pickupTime: pickupTime ?? this.pickupTime,
       printMode: printMode ?? this.printMode,
@@ -460,10 +487,22 @@ class OrderNotifier extends Notifier<OrderState> {
     state = state.copyWith(pickupTime: time);
   }
 
+  void setMultiFileGrid(bool val) {
+    state = state.copyWith(multiFileGrid: val);
+    _calculateTotal();
+  }
+
+  void setPageRange(String range) {
+    state = state.copyWith(pageRange: range);
+  }
+
   void _calculateTotal() {
     double totalSubtotal = 0.0;
 
-    if (state.files.isNotEmpty) {
+    if (state.multiFileGrid && state.files.length > 1) {
+      // Multi-file grid collation: all files combined onto target sheets
+      totalSubtotal = _calculateMultiFileGridSubtotal();
+    } else if (state.files.isNotEmpty) {
       // Multi-file: aggregate costs across all files
       for (final entry in state.files) {
         totalSubtotal += _calculateFileSubtotal(entry);
@@ -485,6 +524,56 @@ class OrderNotifier extends Notifier<OrderState> {
       razorpayFee: razorpayFee,
       amountTotal: double.parse((totalSubtotal + platformFee + razorpayFee + gst).toStringAsFixed(2)),
     );
+  }
+
+  /// Calculate subtotal when multi-file grid collation is enabled.
+  /// Combines total pages across all files onto target sheets.
+  double _calculateMultiFileGridSubtotal() {
+    bool hasColor = state.files.any((f) => f.colorMode == 'Color') || state.colorMode == 'Color';
+    double baseSinglePrice = hasColor ? state.priceColor : state.priceBw;
+    double baseDoublePrice = baseSinglePrice * 1.5;
+    double bindingPrice = 0.0;
+
+    if (state.binding == 'spiral') bindingPrice = 25.0;
+    if (state.binding == 'hardcover') bindingPrice = 60.0;
+
+    String targetColor = hasColor ? 'color' : 'bw';
+
+    for (var rule in state.pricingRules) {
+      if (rule['color'] == targetColor && rule['size'] == 'A4') {
+        if (rule['sides'] == 'single') {
+          baseSinglePrice = double.tryParse(rule['price_per_page']?.toString() ?? '') ?? baseSinglePrice;
+        } else if (rule['sides'] == 'double') {
+          baseDoublePrice = double.tryParse(rule['price_per_page']?.toString() ?? '') ?? baseDoublePrice;
+        }
+        if (state.binding == 'spiral' || state.binding == 'hardcover') {
+          bindingPrice = double.tryParse(rule['binding_spiral_price']?.toString() ?? '') ?? bindingPrice;
+        }
+      }
+    }
+
+    int totalPages = 0;
+    for (final f in state.files) {
+      totalPages += f.pages > 0 ? f.pages : 1;
+    }
+
+    int ppp = state.pagesPerPaper > 0 ? state.pagesPerPaper : state.files.length;
+    int printedSides = (totalPages / ppp).ceil();
+    if (printedSides < 1) printedSides = 1;
+
+    double sheetCost = 0.0;
+    if (state.sides == 'double') {
+      int fullDoubleSheets = printedSides ~/ 2;
+      int remainingSingleSides = printedSides % 2;
+      sheetCost = (fullDoubleSheets * baseDoublePrice) + (remainingSingleSides * baseSinglePrice);
+    } else {
+      sheetCost = printedSides * baseSinglePrice;
+    }
+
+    int validCopies = state.copies > 0 ? state.copies : 1;
+    double docPrintCost = (sheetCost * validCopies) + bindingPrice;
+
+    return double.parse(docPrintCost.toStringAsFixed(2));
   }
 
   /// Calculate subtotal for a single FileEntry using its own settings.

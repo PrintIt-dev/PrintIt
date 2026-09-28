@@ -87,6 +87,13 @@ const OrderCard = ({ order, colType, onStatusUpdate, onPrint, onOpenModal, onRev
                 Erased
               </span>
             )}
+
+            {opts.multi_file_grid && (
+              <span className="inline-flex items-center gap-0.5 bg-cyan-500/15 text-cyan-300 border border-cyan-500/30 text-[9px] font-bold px-1.5 py-0.5 rounded">
+                <span className="material-symbols-outlined text-[11px]">grid_view</span>
+                {opts.pages_per_paper || files.length || 4}-UP GRID
+              </span>
+            )}
           </div>
           <div className="flex items-center gap-1.5 text-on-surface-variant/80 text-xs font-medium">
             <span className="material-symbols-outlined text-[15px]">
@@ -124,7 +131,10 @@ const OrderCard = ({ order, colType, onStatusUpdate, onPrint, onOpenModal, onRev
         </div>
         <div>
           <span className="block text-[10px] font-semibold uppercase tracking-wider text-outline mb-0.5">CONFIG</span>
-          <span className="text-on-surface font-medium">{opts.size || 'A4'} {opts.sides === 'double' ? 'Double' : 'Single'}</span>
+          <span className="text-on-surface font-medium">
+            {opts.size || 'A4'} {opts.sides === 'double' ? 'Double' : 'Single'}
+            {opts.multi_file_grid ? ` (${opts.pages_per_paper || files.length || 4}-up)` : ''}
+          </span>
         </div>
         <div>
           <span className="block text-[10px] font-semibold uppercase tracking-wider text-outline mb-0.5">COPIES</span>
