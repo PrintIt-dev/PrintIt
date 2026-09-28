@@ -4,6 +4,43 @@
  */
 
 /**
+ * Helper to count selective pages from range string e.g. "1-5, 8, 11-14"
+ */
+function parsePageRangeCount(range, maxPages) {
+    if (!range || typeof range !== 'string' || !range.trim()) {
+        return maxPages > 0 ? maxPages : 1;
+    }
+    const pageSet = new Set();
+    const parts = range.split(/[,;\s]+/);
+    for (let part of parts) {
+        part = part.trim();
+        if (!part) continue;
+        if (part.includes('-')) {
+            const dashParts = part.split('-');
+            if (dashParts.length === 2) {
+                const start = parseInt(dashParts[0].trim(), 10);
+                const end = parseInt(dashParts[1].trim(), 10);
+                if (!isNaN(start) && !isNaN(end) && start <= end) {
+                    for (let i = start; i <= end; i++) {
+                        if (maxPages <= 0 || (i >= 1 && i <= maxPages)) {
+                            pageSet.add(i);
+                        }
+                    }
+                }
+            }
+        } else {
+            const single = parseInt(part, 10);
+            if (!isNaN(single)) {
+                if (maxPages <= 0 || (single >= 1 && single <= maxPages)) {
+                    pageSet.add(single);
+                }
+            }
+        }
+    }
+    return pageSet.size > 0 ? pageSet.size : (maxPages > 0 ? maxPages : 1);
+}
+
+/**
  * Calculates the required print subtotal for a given shop and files array.
  * 
  * @param {object} client - pg client or pool
@@ -12,6 +49,7 @@
  * @returns {Promise<{ subtotal: number, minRequiredAmount: number }>}
  */
 async function calculatePrintSubtotal(client, shopId, files) {
+
     if (!shopId) {
         throw new Error('shop_id is required to calculate pricing');
     }
@@ -75,8 +113,11 @@ async function calculatePrintSubtotal(client, shopId, files) {
         for (const rawFile of fileList) {
             const entry = (rawFile && rawFile.file_info && typeof rawFile.file_info === 'object') ? rawFile.file_info : (rawFile || {});
             const printOptions = entry.print_options || rawFile.print_options || {};
-            const p = parseInt(entry.pages || entry.page_count || printOptions.pages || 1, 10);
-            totalInputPages += (p > 0 ? p : 1);
+            const rawRange = printOptions.page_range || entry.page_range || (typeof printOptions.pages === 'string' && (printOptions.pages.includes('-') || printOptions.pages.includes(',')) ? printOptions.pages : null);
+            const p = parseInt(entry.pages || entry.page_count || 1, 10);
+            const count = rawRange ? parsePageRangeCount(rawRange, p) : (p > 0 ? p : 1);
+            totalInputPages += count;
+
 
             const ppp = parseInt(entry.pagesPerPaper || printOptions.pages_per_paper || fileList.length, 10);
             if (ppp > maxPagesPerPaper) maxPagesPerPaper = ppp;
@@ -180,8 +221,10 @@ async function calculatePrintSubtotal(client, shopId, files) {
             }
         }
 
-        const pages = parseInt(entry.pages || entry.page_count || printOptions.pages || 1, 10);
-        const validPages = pages > 0 ? pages : 1;
+        const rawRange = printOptions.page_range || entry.page_range || (typeof printOptions.pages === 'string' && (printOptions.pages.includes('-') || printOptions.pages.includes(',')) ? printOptions.pages : null);
+        const pages = parseInt(entry.pages || entry.page_count || 1, 10);
+        const validPages = rawRange ? parsePageRangeCount(rawRange, pages) : (pages > 0 ? pages : 1);
+
 
         const pagesPerPaper = parseInt(entry.pagesPerPaper || printOptions.pages_per_paper || 1, 10);
         const validPagesPerPaper = pagesPerPaper > 0 ? pagesPerPaper : 1;

@@ -492,9 +492,50 @@ class OrderNotifier extends Notifier<OrderState> {
     _calculateTotal();
   }
 
+  static int parsePageRangeCount(String range, int maxPages) {
+
+    if (range.trim().isEmpty) return maxPages > 0 ? maxPages : 1;
+    final Set<int> pageSet = {};
+    final parts = range.split(RegExp(r'[,;\s]+'));
+    for (var part in parts) {
+      part = part.trim();
+      if (part.isEmpty) continue;
+      if (part.contains('-')) {
+        final dashParts = part.split('-');
+        if (dashParts.length == 2) {
+          final start = int.tryParse(dashParts[0].trim());
+          final end = int.tryParse(dashParts[1].trim());
+          if (start != null && end != null && start <= end) {
+            for (int i = start; i <= end; i++) {
+              if (maxPages <= 0 || (i >= 1 && i <= maxPages)) {
+                pageSet.add(i);
+              }
+            }
+          }
+        }
+      } else {
+        final single = int.tryParse(part);
+        if (single != null) {
+          if (maxPages <= 0 || (single >= 1 && single <= maxPages)) {
+            pageSet.add(single);
+          }
+        }
+      }
+    }
+    return pageSet.isNotEmpty ? pageSet.length : (maxPages > 0 ? maxPages : 1);
+  }
+
   void setPageRange(String range) {
     state = state.copyWith(pageRange: range);
+    if (state.files.isNotEmpty && state.activeFileIndex < state.files.length) {
+      final updated = state.files[state.activeFileIndex].copyWith(pageRange: range);
+      final newFiles = List<FileEntry>.from(state.files);
+      newFiles[state.activeFileIndex] = updated;
+      state = state.copyWith(files: newFiles);
+    }
+    _calculateTotal();
   }
+
 
   void _calculateTotal() {
     double totalSubtotal = 0.0;
@@ -601,6 +642,11 @@ class OrderNotifier extends Notifier<OrderState> {
     }
 
     int totalPages = entry.pages > 0 ? entry.pages : 1;
+    if (entry.pageRange.trim().isNotEmpty) {
+      totalPages = parsePageRangeCount(entry.pageRange, entry.pages);
+    } else if (state.pageRange.trim().isNotEmpty && state.files.length <= 1) {
+      totalPages = parsePageRangeCount(state.pageRange, state.pages);
+    }
     int pagesPerPaper = entry.pagesPerPaper > 0 ? entry.pagesPerPaper : 1;
     int printedSides = (totalPages / pagesPerPaper).ceil();
     if (printedSides < 1) printedSides = 1;
@@ -645,8 +691,12 @@ class OrderNotifier extends Notifier<OrderState> {
     }
     
     int totalPages = state.pages > 0 ? state.pages : 1;
+    if (state.pageRange.trim().isNotEmpty) {
+      totalPages = parsePageRangeCount(state.pageRange, state.pages);
+    }
     int pagesPerPaper = state.pagesPerPaper > 0 ? state.pagesPerPaper : 1;
     int printedSides = (totalPages / pagesPerPaper).ceil();
+
     if (printedSides < 1) printedSides = 1;
 
     double sheetCost = 0.0;

@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import api from '../core/api';
+
 
 const PrintReviewModal = ({ order, onClose, onApprove }) => {
   const shortId = order?.order_id ? order.order_id.split('-')[0] : '';
@@ -193,12 +195,13 @@ const PrintReviewModal = ({ order, onClose, onApprove }) => {
 
   if (!order) return null;
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-scrim/80 backdrop-blur-sm animate-fade-in">
+  return createPortal(
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center p-3 sm:p-5 md:p-6 bg-black/80 backdrop-blur-md animate-fade-in overflow-y-auto">
       <div 
-        className="bg-surface-container rounded-2xl border border-glass-edge shadow-2xl max-w-2xl w-full max-h-[92vh] flex flex-col overflow-hidden text-on-surface"
+        className="bg-surface-container rounded-2xl border border-glass-edge shadow-2xl max-w-2xl w-full max-h-[88vh] my-auto flex flex-col overflow-hidden text-on-surface relative"
         onClick={(e) => e.stopPropagation()}
       >
+
         {/* Header */}
         <div className="p-5 border-b border-outline-variant/60 flex items-center justify-between bg-surface-container-high/40">
           <div className="flex items-center gap-3">
@@ -741,8 +744,10 @@ const PrintReviewModal = ({ order, onClose, onApprove }) => {
           </div>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };
 
 export default PrintReviewModal;
+

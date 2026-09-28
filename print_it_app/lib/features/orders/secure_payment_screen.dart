@@ -79,9 +79,11 @@ class _SecurePaymentScreenState extends ConsumerState<SecurePaymentScreen> {
           'copies': orderState.copies,
           'binding': orderState.binding,
           'pages': orderState.pageRange.isNotEmpty ? orderState.pageRange : null,
+          'page_range': orderState.pageRange.isNotEmpty ? orderState.pageRange : null,
           'print_instructions': orderState.printInstructions,
         },
         'print_instructions': orderState.printInstructions,
+
       };
 
       if (isLoggedIn) {
@@ -191,8 +193,10 @@ class _SecurePaymentScreenState extends ConsumerState<SecurePaymentScreen> {
           'repeat_image_on_grid': fileEntry.repeatImageOnGrid,
           'multi_file_grid': orderState.multiFileGrid,
           'pages': orderState.pageRange.isNotEmpty ? orderState.pageRange : (fileEntry.pageRange.isNotEmpty ? fileEntry.pageRange : null),
+          'page_range': orderState.pageRange.isNotEmpty ? orderState.pageRange : (fileEntry.pageRange.isNotEmpty ? fileEntry.pageRange : null),
         },
         'print_instructions': fileEntry.printInstructions,
+
       });
     }
     return payload;

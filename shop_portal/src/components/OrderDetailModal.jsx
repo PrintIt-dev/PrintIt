@@ -1,8 +1,10 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import api from '../core/api';
 
 const OrderDetailModal = ({ order, onClose, onStatusUpdate, onPrint, onReviewAndAccept }) => {
   if (!order) return null;
+
 
   const shortId = order.order_id ? order.order_id.split('-')[0] : '';
   
@@ -143,10 +145,29 @@ const OrderDetailModal = ({ order, onClose, onStatusUpdate, onPrint, onReviewAnd
     };
   });
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/75 backdrop-blur-sm animate-fade-in">
+  // Extract Selective Page Range if customer specified one
+  const pageRange = useMemo(() => {
+    if (opts.page_range && typeof opts.page_range === 'string' && opts.page_range.trim()) {
+      return opts.page_range.trim();
+    }
+    for (const f of files) {
+      if (f.page_range && typeof f.page_range === 'string' && f.page_range.trim()) {
+        return f.page_range.trim();
+      }
+      if (f.print_options) {
+        try {
+          const po = typeof f.print_options === 'string' ? JSON.parse(f.print_options) : f.print_options;
+          if (po && po.page_range) return po.page_range.trim();
+        } catch (e) {}
+      }
+    }
+    return '';
+  }, [opts, files]);
+
+  return createPortal(
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center p-3 sm:p-5 md:p-6 bg-black/80 backdrop-blur-md animate-fade-in overflow-y-auto">
       <div 
-        className="bg-surface-container border border-outline-variant rounded-2xl w-full max-w-4xl max-h-[92vh] flex flex-col shadow-[0_0_32px_rgba(56,189,248,0.15)] overflow-hidden"
+        className="bg-surface-container border border-outline-variant rounded-2xl w-full max-w-4xl max-h-[88vh] my-auto flex flex-col shadow-[0_16px_64px_rgba(0,0,0,0.6)] overflow-hidden relative"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
@@ -176,6 +197,12 @@ const OrderDetailModal = ({ order, onClose, onStatusUpdate, onPrint, onReviewAnd
                   SECURE PRINTING
                 </span>
               )}
+              {pageRange && (
+                <span className="inline-flex items-center gap-1 bg-sky-500/15 text-sky-600 dark:text-sky-300 border border-sky-500/40 text-[10px] font-bold px-2 py-0.5 rounded-full">
+                  <span className="material-symbols-outlined text-[12px]">filter_none</span>
+                  PAGES: {pageRange}
+                </span>
+              )}
               {opts.multi_file_grid && (
                 <span className="inline-flex items-center gap-1 bg-cyan-500/15 text-cyan-600 dark:text-cyan-300 border border-cyan-500/40 text-[10px] font-bold px-2 py-0.5 rounded-full">
                   <span className="material-symbols-outlined text-[12px]">grid_view</span>
@@ -193,6 +220,7 @@ const OrderDetailModal = ({ order, onClose, onStatusUpdate, onPrint, onReviewAnd
               Placed on {new Date(order.created_at).toLocaleString()}
             </p>
           </div>
+
 
           <button 
             onClick={onClose}
@@ -417,6 +445,30 @@ const OrderDetailModal = ({ order, onClose, onStatusUpdate, onPrint, onReviewAnd
                 </div>
               </div>
 
+              {/* Selective Page Range Banner */}
+              {pageRange && (
+                <div className="bg-sky-500/10 border border-sky-500/30 p-3 rounded-xl flex items-center justify-between">
+                  <div className="flex items-center gap-2.5">
+                    <span className="material-symbols-outlined text-sky-500 text-[22px]">filter_none</span>
+                    <div>
+                      <h4 className="text-xs font-bold text-on-surface flex items-center gap-1.5">
+                        Selective Page Printing
+                        <span className="text-[10px] bg-sky-500/20 text-sky-700 dark:text-sky-300 font-mono font-bold px-1.5 py-0.2 rounded border border-sky-500/30">
+                          CUSTOM RANGE
+                        </span>
+                      </h4>
+                      <p className="text-[11px] text-on-surface-variant font-medium mt-0.5">
+                        Customer requested to print only specified pages
+                      </p>
+                    </div>
+                  </div>
+                  <span className="font-mono font-black text-sm text-sky-600 dark:text-sky-300 bg-sky-500/20 px-3 py-1.5 rounded-lg border border-sky-500/40 shadow-sm">
+                    {pageRange}
+                  </span>
+                </div>
+              )}
+
+
               {/* Attached Files List */}
               <div className="bg-surface-bright p-4 rounded-xl border border-outline-variant">
                 <h4 className="text-xs font-bold uppercase tracking-wider text-on-surface-variant mb-2.5 flex items-center justify-between">
@@ -596,8 +648,10 @@ const OrderDetailModal = ({ order, onClose, onStatusUpdate, onPrint, onReviewAnd
           </div>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };
 
 export default OrderDetailModal;
+

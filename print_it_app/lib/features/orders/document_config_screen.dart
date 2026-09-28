@@ -884,66 +884,92 @@ class _DocumentConfigScreenState extends ConsumerState<DocumentConfigScreen> {
                             ),
                             const SizedBox(height: 20),
 
-                            // Page Range Selection (Optional)
-                            Padding(
-                              padding: const EdgeInsets.only(left: 2, bottom: 8),
-                              child: Row(
-                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                children: [
-                                  Text(
-                                    'Page Range (Optional)',
-                                    style: TextStyle(
-                                      color: isDark ? const Color(0xFFF1F5F9) : const Color(0xFF0F172A),
-                                      fontSize: 14,
-                                      fontWeight: FontWeight.w500,
-                                    ),
-                                  ),
-                                  Text(
-                                    'e.g. 1-5, 8',
-                                    style: TextStyle(
-                                      color: isDark ? const Color(0xFF64748B) : const Color(0xFF94A3B8),
-                                      fontSize: 11,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
+                            // Selective Page Printing Card (Optional)
                             Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                              padding: const EdgeInsets.all(16),
                               decoration: BoxDecoration(
                                 color: isDark
-                                    ? const Color(0xFF0F172A).withValues(alpha: 0.55)
-                                    : Colors.white.withValues(alpha: 0.65),
-                                borderRadius: BorderRadius.circular(18),
+                                    ? const Color(0xFF121929).withValues(alpha: 0.90)
+                                    : Colors.white.withValues(alpha: 0.90),
+                                borderRadius: BorderRadius.circular(20),
+                                border: Border.all(
+                                  color: isDark
+                                      ? const Color(0xFF334155).withValues(alpha: 0.50)
+                                      : const Color(0xFFE2E8F0),
+                                  width: 1.0,
+                                ),
                                 boxShadow: [
                                   BoxShadow(
-                                    color: isDark ? Colors.black.withValues(alpha: 0.15) : const Color(0x1064748B),
-                                    blurRadius: 8,
+                                    color: isDark
+                                        ? Colors.black.withValues(alpha: 0.20)
+                                        : const Color(0x0A0F172A),
+                                    blurRadius: 16,
+                                    offset: const Offset(0, 4),
                                   ),
                                 ],
                               ),
-                              child: Row(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  Icon(
-                                    Icons.filter_none_rounded,
-                                    size: 18,
-                                    color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+                                  Row(
+                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      Row(
+                                        children: [
+                                          const Icon(
+                                            Icons.filter_none_rounded,
+                                            size: 20,
+                                            color: Color(0xFF0284C7),
+                                          ),
+                                          const SizedBox(width: 8),
+                                          Text(
+                                            'Selective Page Printing (Optional)',
+                                            style: TextStyle(
+                                              color: isDark ? const Color(0xFFF1F5F9) : const Color(0xFF0F172A),
+                                              fontSize: 14,
+                                              fontWeight: FontWeight.w600,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                      Text(
+                                        'e.g. 1-5, 8, 11-14 or leave blank for All',
+                                        style: TextStyle(
+                                          color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w400,
+                                        ),
+                                      ),
+                                    ],
                                   ),
-                                  const SizedBox(width: 12),
-                                  Expanded(
+                                  const SizedBox(height: 12),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                                    decoration: BoxDecoration(
+                                      color: isDark
+                                          ? const Color(0xFF0F172A).withValues(alpha: 0.60)
+                                          : const Color(0xFFF8FAFC),
+                                      borderRadius: BorderRadius.circular(12),
+                                      border: Border.all(
+                                        color: isDark ? Colors.white12 : const Color(0xFFE2E8F0),
+                                        width: 1.0,
+                                      ),
+                                    ),
                                     child: TextField(
                                       onChanged: (val) => ref.read(orderProvider.notifier).setPageRange(val),
                                       style: TextStyle(
                                         color: isDark ? Colors.white : const Color(0xFF0F172A),
                                         fontSize: 13,
+                                        fontWeight: FontWeight.w500,
                                       ),
                                       decoration: InputDecoration(
-                                        hintText: 'All pages (or specify: 1, 3-5)',
+                                        hintText: 'Leave empty to print all document pages',
                                         hintStyle: TextStyle(
                                           color: isDark ? const Color(0xFF64748B) : const Color(0xFF94A3B8),
                                           fontSize: 13,
                                         ),
                                         border: InputBorder.none,
+                                        isDense: true,
                                         contentPadding: EdgeInsets.zero,
                                       ),
                                     ),
@@ -951,6 +977,7 @@ class _DocumentConfigScreenState extends ConsumerState<DocumentConfigScreen> {
                                 ],
                               ),
                             ),
+
                             const SizedBox(height: 20),
 
                             // Print Instructions Section
