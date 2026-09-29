@@ -8,6 +8,9 @@ import 'office_doc_helper.dart';
 
 class LiveFilePreview extends StatefulWidget {
   final FileEntry fileEntry;
+  final List<FileEntry>? allFileEntries;
+  final bool multiFileGrid;
+  final int sheetIndex;
   final int pagesPerPaper;
   final String orientation;
   final Widget? bottomOverlay;
@@ -16,6 +19,9 @@ class LiveFilePreview extends StatefulWidget {
   const LiveFilePreview({
     super.key,
     required this.fileEntry,
+    this.allFileEntries,
+    this.multiFileGrid = false,
+    this.sheetIndex = 0,
     required this.pagesPerPaper,
     required this.orientation,
     this.bottomOverlay,
@@ -159,7 +165,22 @@ class _LiveFilePreviewState extends State<LiveFilePreview> {
 
     Widget previewWidget;
 
-    if (type == 'pdf' || (['ppt', 'pptx', 'doc', 'docx'].contains(type) && _pdfController != null)) {
+    if (widget.multiFileGrid &&
+        widget.allFileEntries != null &&
+        widget.allFileEntries!.isNotEmpty) {
+      final startIdx = widget.sheetIndex * widget.pagesPerPaper;
+      final endIdx = (startIdx + widget.pagesPerPaper).clamp(0, widget.allFileEntries!.length);
+      final sheetEntries = (startIdx < widget.allFileEntries!.length)
+          ? widget.allFileEntries!.sublist(startIdx, endIdx)
+          : <FileEntry>[];
+
+      previewWidget = _NUpMultiImagePreview(
+        sheetEntries: sheetEntries,
+        pagesPerPaper: widget.pagesPerPaper,
+        orientation: widget.orientation,
+        repeatImage: widget.repeatImageOnGrid,
+      );
+    } else if (type == 'pdf' || (['ppt', 'pptx', 'doc', 'docx'].contains(type) && _pdfController != null)) {
       if (widget.pagesPerPaper == 1) {
         previewWidget = Stack(
           children: [
@@ -251,18 +272,18 @@ class _LiveFilePreviewState extends State<LiveFilePreview> {
           file.bytes!,
           fit: BoxFit.contain,
           errorBuilder: (context, error, stackTrace) => const Center(
-            child: Icon(Icons.broken_image, size: 48, color: Colors.grey),
-          ),
-        );
-      } else {
-        imageWidget = Image.file(
-          File(file.path!),
-          fit: BoxFit.contain,
-          errorBuilder: (context, error, stackTrace) => const Center(
-            child: Icon(Icons.broken_image, size: 48, color: Colors.grey),
-          ),
-        );
-      }
+              child: Icon(Icons.broken_image, size: 48, color: Colors.grey),
+            ),
+          );
+        } else {
+          imageWidget = Image.file(
+            File(file.path!),
+            fit: BoxFit.contain,
+            errorBuilder: (context, error, stackTrace) => const Center(
+              child: Icon(Icons.broken_image, size: 48, color: Colors.grey),
+            ),
+          );
+        }
       previewWidget = _NUpImagePreview(
         imageWidget: imageWidget,
         pagesPerPaper: widget.pagesPerPaper,
@@ -425,6 +446,137 @@ class _NUpImagePreview extends StatelessWidget {
                         ? Padding(
                             padding: const EdgeInsets.all(4),
                             child: imageWidget,
+                          )
+                        : Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(
+                                Icons.crop_portrait,
+                                size: 16,
+                                color: Colors.grey.shade400,
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                'Empty',
+                                style: TextStyle(
+                                  fontSize: 8,
+                                  color: Colors.grey.shade400,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ],
+                          ),
+                  ),
+                );
+              }),
+            ),
+          );
+        }),
+      ),
+    );
+  }
+}
+
+/// N-Up Multi-Image Preview renderer supporting tiling distinct uploaded images on 1 sheet
+class _NUpMultiImagePreview extends StatelessWidget {
+  final List<FileEntry> sheetEntries;
+  final int pagesPerPaper;
+  final String orientation;
+  final bool repeatImage;
+
+  const _NUpMultiImagePreview({
+    required this.sheetEntries,
+    required this.pagesPerPaper,
+    required this.orientation,
+    this.repeatImage = true,
+  });
+
+  Widget _buildImageForEntry(FileEntry entry) {
+    final file = entry.file;
+    if (kIsWeb || file.bytes != null) {
+      if (file.bytes != null && file.bytes!.isNotEmpty) {
+        return Image.memory(
+          file.bytes!,
+          fit: BoxFit.contain,
+          errorBuilder: (context, error, stackTrace) => const Center(
+            child: Icon(Icons.broken_image, size: 28, color: Colors.grey),
+          ),
+        );
+      }
+    } else if (file.path != null) {
+      return Image.file(
+        File(file.path!),
+        fit: BoxFit.contain,
+        errorBuilder: (context, error, stackTrace) => const Center(
+          child: Icon(Icons.broken_image, size: 28, color: Colors.grey),
+        ),
+      );
+    }
+    return const Center(child: Icon(Icons.image, size: 28, color: Colors.grey));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (pagesPerPaper <= 1) {
+      return Container(
+        color: Colors.white,
+        padding: const EdgeInsets.all(8),
+        alignment: Alignment.center,
+        child: sheetEntries.isNotEmpty ? _buildImageForEntry(sheetEntries.first) : const SizedBox(),
+      );
+    }
+
+    int columns = 1;
+    int rows = 1;
+
+    if (orientation == 'portrait') {
+      if (pagesPerPaper == 2) { columns = 1; rows = 2; }
+      else if (pagesPerPaper == 4) { columns = 2; rows = 2; }
+      else if (pagesPerPaper == 6) { columns = 2; rows = 3; }
+      else { columns = 2; rows = 2; }
+    } else {
+      if (pagesPerPaper == 2) { columns = 2; rows = 1; }
+      else if (pagesPerPaper == 4) { columns = 2; rows = 2; }
+      else if (pagesPerPaper == 6) { columns = 3; rows = 2; }
+      else { columns = 2; rows = 2; }
+    }
+
+    return Container(
+      color: Colors.white,
+      padding: const EdgeInsets.all(8),
+      child: Column(
+        children: List.generate(rows, (r) {
+          return Expanded(
+            child: Row(
+              children: List.generate(columns, (c) {
+                final cellIndex = r * columns + c;
+                final bool hasDistinctImage = cellIndex < sheetEntries.length;
+                final bool shouldRepeat = !hasDistinctImage && repeatImage && sheetEntries.isNotEmpty;
+                final bool shouldRender = hasDistinctImage || shouldRepeat;
+
+                Widget? cellContent;
+                if (hasDistinctImage) {
+                  cellContent = _buildImageForEntry(sheetEntries[cellIndex]);
+                } else if (shouldRepeat) {
+                  cellContent = _buildImageForEntry(sheetEntries[cellIndex % sheetEntries.length]);
+                }
+
+                return Expanded(
+                  child: Container(
+                    margin: const EdgeInsets.all(3),
+                    decoration: BoxDecoration(
+                      color: shouldRender ? Colors.white : const Color(0xFFF8FAFC),
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(
+                        color: shouldRender ? const Color(0xFFCBD5E1) : const Color(0xFFE2E8F0),
+                        style: BorderStyle.solid,
+                      ),
+                    ),
+                    alignment: Alignment.center,
+                    child: shouldRender
+                        ? Padding(
+                            padding: const EdgeInsets.all(4),
+                            child: cellContent,
                           )
                         : Column(
                             mainAxisAlignment: MainAxisAlignment.center,

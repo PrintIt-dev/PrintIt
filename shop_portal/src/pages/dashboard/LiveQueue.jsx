@@ -4,6 +4,8 @@ import api from '../../core/api';
 import OrderCard from '../../components/OrderCard';
 import OrderDetailModal from '../../components/OrderDetailModal';
 import PrintReviewModal from '../../components/PrintReviewModal';
+import NewPrintJobModal from '../../components/NewPrintJobModal';
+import { Link } from 'react-router-dom';
 
 const getPickupType = (order) => {
   if (!order) return 'express';
@@ -35,7 +37,9 @@ const LiveQueue = () => {
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [reviewOrder, setReviewOrder] = useState(null);
   const [showFilterMenu, setShowFilterMenu] = useState(false);
-  const [colorFilter, setColorFilter] = useState('all'); // 'all' | 'bw' | 'color'
+  const [colorFilter, setColorFilter] = useState('all');
+  const [agentDevice, setAgentDevice] = useState(null);
+  const [showNewJobModal, setShowNewJobModal] = useState(false); // 'all' | 'bw' | 'color'
 
   const fetchOrders = async (showLoader = false) => {
     if (showLoader) setIsLoading(true);
@@ -238,6 +242,46 @@ const handleStatusUpdate = async (orderId, newStatus) => {
             </button>
           </div>
 
+          {/* Agent Status Pill */}
+          <Link
+            to="/dashboard/agent"
+            className={`flex items-center gap-2 px-3 py-1.5 rounded-xl border text-xs font-bold transition-all hover:scale-[1.02] cursor-pointer ${
+              agentDevice?.status === 'PRINTING'
+                ? 'bg-blue-500/15 border-blue-500/30 text-blue-400'
+                : (agentDevice && ['ONLINE', 'READY'].includes(agentDevice.status))
+                ? 'bg-emerald-500/15 border-emerald-500/30 text-emerald-400'
+                : 'bg-amber-500/15 border-amber-500/30 text-amber-400'
+            }`}
+            title={agentDevice ? `Station: ${agentDevice.device_name || 'Counter'} • ${agentDevice.selected_printer || 'Auto'} • Click for settings` : 'Click to configure Print Agent'}
+          >
+            <span className={`w-2 h-2 rounded-full ${
+              agentDevice?.status === 'PRINTING'
+                ? 'bg-blue-400 animate-ping'
+                : (agentDevice && ['ONLINE', 'READY'].includes(agentDevice.status))
+                ? 'bg-emerald-400 animate-pulse'
+                : 'bg-amber-400'
+            }`}></span>
+            <span className="hidden sm:inline">
+              {agentDevice?.status === 'PRINTING'
+                ? 'Agent Printing...'
+                : (agentDevice && ['ONLINE', 'READY'].includes(agentDevice.status))
+                ? `Agent Ready (${(agentDevice.selected_printer || 'Auto').split(' ')[0]})`
+                : 'Agent Offline'}
+            </span>
+            <span className="sm:hidden">
+              {agentDevice?.status === 'PRINTING' ? 'Printing' : ((agentDevice && ['ONLINE', 'READY'].includes(agentDevice.status)) ? 'Ready' : 'Offline')}
+            </span>
+          </Link>
+
+          {/* + Walk-in Print Button */}
+          <button
+            onClick={() => setShowNewJobModal(true)}
+            className="flex items-center gap-1.5 px-3 sm:px-4 py-2 bg-primary text-on-primary font-bold text-xs rounded-xl hover:bg-primary/90 transition-all cursor-pointer shadow-sm shadow-primary/20 shrink-0"
+          >
+            <span className="material-symbols-outlined text-[17px]">add_circle</span>
+            <span>+ Walk-in Print</span>
+          </button>
+
           {/* Filter Button */}
           <div className="relative">
             <button 
@@ -430,6 +474,13 @@ const handleStatusUpdate = async (orderId, newStatus) => {
       )}
 
       {/* Print Verification & Approval Modal */}
+      {showNewJobModal && (
+        <NewPrintJobModal
+          onClose={() => setShowNewJobModal(false)}
+          onJobCreated={() => fetchOrders(true)}
+        />
+      )}
+
       {reviewOrder && (
         <PrintReviewModal
           order={reviewOrder}

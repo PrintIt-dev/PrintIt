@@ -15,6 +15,7 @@ class DocumentConfigScreen extends ConsumerStatefulWidget {
 
 class _DocumentConfigScreenState extends ConsumerState<DocumentConfigScreen> {
   late PageController _pageController;
+  int _currentSheetIndex = 0;
 
   @override
   void initState() {
@@ -43,6 +44,10 @@ class _DocumentConfigScreenState extends ConsumerState<DocumentConfigScreen> {
             activeFile.file.name.toLowerCase().endsWith('.jpeg') ||
             activeFile.file.name.toLowerCase().endsWith('.png') ||
             activeFile.file.name.toLowerCase().endsWith('.webp'));
+    final isMultiFileGrid = orderState.multiFileGrid && orderState.files.length > 1;
+    final totalPreviewSheets = isMultiFileGrid
+        ? (orderState.files.length / (orderState.pagesPerPaper > 0 ? orderState.pagesPerPaper : 1)).ceil()
+        : orderState.files.length;
 
     return Scaffold(
       backgroundColor: Colors.transparent,
@@ -123,12 +128,19 @@ class _DocumentConfigScreenState extends ConsumerState<DocumentConfigScreen> {
                                       children: [
                                         PageView.builder(
                                           controller: _pageController,
-                                          itemCount: orderState.files.length,
+                                          itemCount: totalPreviewSheets < 1 ? 1 : totalPreviewSheets,
                                           onPageChanged: (index) {
-                                            ref.read(orderProvider.notifier).setActiveFileIndex(index);
+                                            setState(() {
+                                              _currentSheetIndex = index;
+                                            });
+                                            if (!isMultiFileGrid) {
+                                              ref.read(orderProvider.notifier).setActiveFileIndex(index);
+                                            }
                                           },
                                           itemBuilder: (context, index) {
-                                            final entry = orderState.files[index];
+                                            final entry = isMultiFileGrid
+                                                ? (orderState.files.isNotEmpty ? orderState.files[0] : activeFile!)
+                                                : orderState.files[index];
                                             final fileName = entry.file.name.toLowerCase();
                                             final isImage = fileName.endsWith('.jpg') ||
                                                 fileName.endsWith('.jpeg') ||
@@ -136,6 +148,9 @@ class _DocumentConfigScreenState extends ConsumerState<DocumentConfigScreen> {
                                                 fileName.endsWith('.webp');
                                             return LiveFilePreview(
                                               fileEntry: entry,
+                                              allFileEntries: isMultiFileGrid ? orderState.files : null,
+                                              multiFileGrid: isMultiFileGrid,
+                                              sheetIndex: isMultiFileGrid ? index : 0,
                                               pagesPerPaper: orderState.pagesPerPaper,
                                               orientation: orderState.orientation,
                                               repeatImageOnGrid: orderState.repeatImageOnGrid,
@@ -268,15 +283,24 @@ class _DocumentConfigScreenState extends ConsumerState<DocumentConfigScreen> {
                                   ),
                                   const SizedBox(height: 12),
                                   if (orderState.files.isNotEmpty)
-                                    Text(
-                                      '${orderState.files[orderState.activeFileIndex].file.name} • ${orderState.files[orderState.activeFileIndex].pages} pages',
-                                      style: TextStyle(
-                                        color: isDark ? const Color(0xFFF1F5F9) : const Color(0xFF0F172A),
-                                        fontSize: 14,
-                                        fontWeight: FontWeight.w500,
-                                      ),
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
+                                    Builder(
+                                      builder: (context) {
+                                        final safeIndex = orderState.activeFileIndex.clamp(0, orderState.files.length - 1);
+                                        final safeSheet = _currentSheetIndex.clamp(0, (totalPreviewSheets - 1).clamp(0, 9999));
+                                        final text = isMultiFileGrid
+                                            ? 'Combining ${orderState.files.length} photos on grid • Sheet ${safeSheet + 1} of $totalPreviewSheets'
+                                            : '${orderState.files[safeIndex].file.name} • ${orderState.files[safeIndex].pages} pages';
+                                        return Text(
+                                          text,
+                                          style: TextStyle(
+                                            color: isDark ? const Color(0xFFF1F5F9) : const Color(0xFF0F172A),
+                                            fontSize: 14,
+                                            fontWeight: FontWeight.w500,
+                                          ),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        );
+                                      },
                                     ),
                                 ],
                               ),

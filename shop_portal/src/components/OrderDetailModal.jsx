@@ -191,12 +191,7 @@ const OrderDetailModal = ({ order, onClose, onStatusUpdate, onPrint, onReviewAnd
                   Queue Pos #{order.queue_position}
                 </span>
               )}
-              {order.print_mode === 'secure' && (
-                <span className="inline-flex items-center gap-1 bg-amber-500/15 text-amber-600 dark:text-amber-300 border border-amber-500/40 text-[10px] font-bold px-2 py-0.5 rounded-full">
-                  <span className="material-symbols-outlined text-[12px]">lock</span>
-                  SECURE PRINTING
-                </span>
-              )}
+
               {pageRange && (
                 <span className="inline-flex items-center gap-1 bg-sky-500/15 text-sky-600 dark:text-sky-300 border border-sky-500/40 text-[10px] font-bold px-2 py-0.5 rounded-full">
                   <span className="material-symbols-outlined text-[12px]">filter_none</span>
@@ -521,7 +516,7 @@ const OrderDetailModal = ({ order, onClose, onStatusUpdate, onPrint, onReviewAnd
                           ) : (
                             <button
                               type="button"
-                              onClick={() => onPrint(order.order_id)}
+                              onClick={() => onPrint(order.order_id, idx)}
                               className="px-2.5 py-1 bg-primary text-on-primary hover:bg-primary/90 font-bold rounded text-[11px] transition-colors flex items-center gap-1 cursor-pointer shadow-sm"
                               title="Print to connected Print Agent"
                             >

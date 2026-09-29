@@ -191,7 +191,8 @@ const PrintReviewModal = ({ order, onClose, onApprove }) => {
 
   const isScheduled = initialOpts.pickup_type === 'scheduled' || order?.order_id?.startsWith('S');
   const phoneStr = order?.customer_phone || 'N/A';
-  const isAgentOnline = agentDevice && agentDevice.status === 'ONLINE';
+  const isAgentOnline = agentDevice && ['ONLINE', 'READY', 'PRINTING'].includes(agentDevice.status);
+  const isAgentPrinting = agentDevice && agentDevice.status === 'PRINTING';
 
   if (!order) return null;
 
@@ -214,12 +215,7 @@ const PrintReviewModal = ({ order, onClose, onApprove }) => {
                 <span className="font-display font-bold text-primary bg-primary/10 px-2 py-0.5 rounded text-xs">
                   #{shortId}
                 </span>
-                {order.print_mode === 'secure' && (
-                  <span className="inline-flex items-center gap-1 bg-amber-500/15 text-amber-300 border border-amber-500/40 text-[10px] font-bold px-2 py-0.5 rounded-full">
-                    <span className="material-symbols-outlined text-[12px]">lock</span>
-                    SECURE
-                  </span>
-                )}
+
               </div>
               <p className="text-xs text-on-surface-variant">Review document specifications, collation, and printer routing before spooling.</p>
             </div>
@@ -259,7 +255,7 @@ const PrintReviewModal = ({ order, onClose, onApprove }) => {
                       : 'bg-amber-500/20 text-amber-300'
                   }`}>
                     <span className={`w-1.5 h-1.5 rounded-full ${isAgentOnline ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'}`}></span>
-                    {isAgentOnline ? 'ONLINE' : 'OFFLINE'}
+                    {isAgentPrinting ? 'PRINTING' : (isAgentOnline ? 'ONLINE & READY' : 'OFFLINE')}
                   </span>
                 </div>
                 <p className="text-xs text-on-surface-variant mt-0.5">

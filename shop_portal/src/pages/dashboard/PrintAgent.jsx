@@ -106,13 +106,11 @@ const PrintAgent = () => {
     if (device?.selected_printer_bw) list.add(device.selected_printer_bw);
     if (device?.selected_printer_color) list.add(device.selected_printer_color);
 
-    if (list.size === 0) {
-      list.add('Virtual Test Printer (Save to Disk)');
-    }
     return Array.from(list);
   }, [device]);
 
-  const isOnline = device && device.status === 'ONLINE';
+  const isOnline = device && ['ONLINE', 'READY', 'PRINTING'].includes(device.status);
+  const isPrinting = device && device.status === 'PRINTING';
 
   return (
     <div className="flex-1 flex flex-col gap-6 max-w-5xl mx-auto w-full">
@@ -146,12 +144,20 @@ const PrintAgent = () => {
             <div className="flex items-center justify-between">
               <span className="text-xs font-bold uppercase tracking-wider text-on-surface-variant">Station Status</span>
               <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold ${
-                isOnline 
+                isPrinting
+                  ? 'bg-blue-500/15 text-blue-400 border border-blue-500/30'
+                  : isOnline 
                   ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30' 
                   : 'bg-amber-500/15 text-amber-400 border border-amber-500/30'
               }`}>
-                <span className={`w-2 h-2 rounded-full ${isOnline ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'}`} />
-                {isOnline ? 'ONLINE' : (device ? device.status : 'NOT PAIRED')}
+                <span className={`w-2 h-2 rounded-full ${
+                  isPrinting 
+                    ? 'bg-blue-400 animate-ping' 
+                    : isOnline 
+                    ? 'bg-emerald-400 animate-pulse' 
+                    : 'bg-amber-400'
+                }`} />
+                {isPrinting ? 'PRINTING' : (isOnline ? 'ONLINE & READY' : (device ? device.status : 'NOT PAIRED'))}
               </div>
             </div>
 
@@ -192,7 +198,6 @@ const PrintAgent = () => {
               </div>
             </div>
           </div>
-
           {/* Quick Info Box */}
           <div className="p-4 bg-surface-container/60 rounded-xl border border-glass-edge/30 text-xs text-on-surface-variant leading-relaxed">
             <span className="font-bold text-on-surface flex items-center gap-1.5 mb-1.5">
@@ -238,42 +243,47 @@ const PrintAgent = () => {
                   onChange={(e) => setSelectedBw(e.target.value)}
                   className="w-full bg-surface-container-high border border-glass-edge/40 rounded-lg px-3 py-2 text-xs font-semibold text-primary outline-none focus:border-primary cursor-pointer"
                 >
-                  <option value="">Auto-Route (System Default)</option>
+                  <option value="">Auto (OS Default Spooler)</option>
                   {availablePrinters.map((p) => (
                     <option key={p} value={p}>
                       {p}
                     </option>
                   ))}
                 </select>
-                <span className="text-[11px] text-on-surface-variant">Used for all single & double-sided B&W orders.</span>
+                <p className="text-[11px] text-on-surface-variant">
+                  Used for standard single/double sided documents and text prints.
+                </p>
               </div>
 
               {/* Color Printer */}
               <div className="bg-surface-container/70 p-4 rounded-xl border border-glass-edge/30 flex flex-col gap-2">
                 <label className="text-xs font-bold text-on-surface flex items-center gap-1.5">
-                  <span className="w-2.5 h-2.5 rounded-full bg-amber-400 inline-block"></span>
-                  Default Color Printer
+                  <span className="w-2.5 h-2.5 rounded-full bg-gradient-to-tr from-amber-400 via-rose-500 to-indigo-500 inline-block"></span>
+                  Default Color / Photo Printer
                 </label>
                 <select
                   value={selectedColor}
                   onChange={(e) => setSelectedColor(e.target.value)}
                   className="w-full bg-surface-container-high border border-glass-edge/40 rounded-lg px-3 py-2 text-xs font-semibold text-primary outline-none focus:border-primary cursor-pointer"
                 >
-                  <option value="">Auto-Route (System Default)</option>
+                  <option value="">Auto (OS Default Spooler)</option>
                   {availablePrinters.map((p) => (
                     <option key={p} value={p}>
                       {p}
                     </option>
                   ))}
                 </select>
-                <span className="text-[11px] text-on-surface-variant">Used for color documents, photos & certificates.</span>
+                <p className="text-[11px] text-on-surface-variant">
+                  Used when customer selects Full Color mode or Photo Grid printing.
+                </p>
               </div>
+            </div>
 
-              {/* Fallback Printer */}
-              <div className="sm:col-span-2 bg-surface-container/70 p-4 rounded-xl border border-glass-edge/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            {/* General Fallback Printer */}
+            <div className="bg-surface-container/40 p-4 rounded-xl border border-glass-edge/20 flex flex-col gap-2">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div className="flex-1">
-                  <label className="text-xs font-bold text-on-surface flex items-center gap-1.5 mb-1.5">
-                    <span className="material-symbols-outlined text-sm text-primary">print</span>
+                  <label className="text-xs font-bold text-on-surface block mb-1">
                     General Fallback Printer
                   </label>
                   <select

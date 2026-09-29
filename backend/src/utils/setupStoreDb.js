@@ -238,33 +238,8 @@ async function setupStoreDb() {
             console.log(`✅ Seeded ${seedProducts.length} catalog items.`);
         }
 
-        // 6. Map sample inventory to any registered shops that have no inventory
-        const shopsRes = await client.query('SELECT shop_id, name FROM shops LIMIT 10');
-        if (shopsRes.rows.length > 0) {
-            const catalogItemsRes = await client.query('SELECT product_id, title, category FROM product_catalog LIMIT 10');
-            for (const shop of shopsRes.rows) {
-                const invCount = await client.query('SELECT COUNT(*) FROM shop_inventory WHERE shop_id = $1', [shop.shop_id]);
-                if (parseInt(invCount.rows[0].count, 10) === 0) {
-                    console.log(`ℹ️ Mapping sample inventory to shop: ${shop.name}...`);
-                    for (let i = 0; i < catalogItemsRes.rows.length; i++) {
-                        const item = catalogItemsRes.rows[i];
-                        // Reasonable pricing: manuals ~₹45-65, books ~₹120-180, notes ~₹35, forms ~₹20
-                        let price = 50.00;
-                        if (item.category === 'Books') price = 140.00 + (i * 10);
-                        else if (item.category === 'Manuals') price = 45.00 + (i * 5);
-                        else if (item.category === 'Notes') price = 35.00;
-                        else if (item.category === 'Forms') price = 25.00;
-
-                        const stockCount = 5 + (i * 3); // realistic stock e.g. 5, 8, 11, 14...
-                        await client.query(`
-                            INSERT INTO shop_inventory (shop_id, product_id, price, stock_count, is_available)
-                            VALUES ($1, $2, $3, $4, true)
-                            ON CONFLICT (shop_id, product_id) DO NOTHING
-                        `, [shop.shop_id, item.product_id, price, stockCount]);
-                    }
-                }
-            }
-        }
+        // 6. Shop inventory is managed directly by each shopkeeper via Shop Portal
+        // (No automatic dummy inventory injection into shop listings)
 
         await client.query('COMMIT');
         console.log('✅ Store database setup and verification completed.');
