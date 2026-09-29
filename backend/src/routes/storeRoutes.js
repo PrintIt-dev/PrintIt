@@ -11,8 +11,13 @@ const auth = require('../middleware/auth');
  */
 router.get('/categories', async (req, res) => {
     try {
-        const defaultCategories = ['All', 'Books', 'Manuals', 'Notes', 'Forms', 'Other'];
-        res.json(defaultCategories);
+        const catRes = await pool.query(`
+            SELECT DISTINCT category FROM product_catalog WHERE is_active = true AND category IS NOT NULL AND TRIM(category) != ''
+        `);
+        const existingCats = catRes.rows.map(r => r.category.trim());
+        const standardDefaults = ['Books', 'Manuals', 'Notes', 'Forms', 'Stationery', 'Other'];
+        const allCats = Array.from(new Set(['All', ...standardDefaults, ...existingCats]));
+        res.json(allCats);
     } catch (err) {
         console.error('Error fetching categories:', err);
         res.status(500).json({ error: 'Failed to fetch categories' });

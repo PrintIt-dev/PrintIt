@@ -36,13 +36,16 @@ router.get('/', async (req, res) => {
                 p.subject,
                 p.author,
                 p.isbn,
-                p.cover_photo_url
+                p.cover_photo_url,
+                p.created_by,
+                (p.created_by IS NOT NULL AND p.created_by = $2) AS is_custom
             FROM shop_inventory i
             JOIN product_catalog p ON i.product_id = p.product_id
             WHERE i.shop_id = $1
         `;
-        const params = [req.shop_id];
-        let paramIndex = 2;
+        const userId = req.user?.user_id;
+        const params = [req.shop_id, userId];
+        let paramIndex = 3;
 
         if (category && category !== 'All') {
             query += ` AND p.category ILIKE $${paramIndex++}`;
@@ -106,6 +109,192 @@ router.get('/catalog', async (req, res) => {
     } catch (err) {
         console.error('Error fetching master catalog for shopkeeper:', err);
         res.status(500).json({ error: 'Failed to fetch catalog' });
+    }
+});
+
+/**
+ * @route   POST /api/shop/inventory/custom-product
+ * @desc    Create a custom product directly (not from master catalog) and add to shop's inventory
+ * @access  Private (Shopkeeper)
+ */
+router.post('/custom-product', async (req, res) => {
+    try {
+        const {
+            title,
+            category,
+            price,
+            stock_count,
+            description,
+            branch,
+            course_type,
+            semester,
+            subject,
+            author,
+            isbn,
+            cover_photo_url
+        } = req.body;
+
+        if (!title || !title.trim()) {
+            return res.status(400).json({ error: 'Product title is required' });
+        }
+
+        const prodCategory = category && category.trim() ? category.trim() : 'Other';
+        const numPrice = parseFloat(price);
+        const numStock = parseInt(stock_count !== undefined ? stock_count : 0, 10);
+
+        if (isNaN(numPrice) || numPrice < 0) {
+            return res.status(400).json({ error: 'Valid positive selling price is required' });
+        }
+
+        if (isNaN(numStock) || numStock < 0) {
+            return res.status(400).json({ error: 'Valid non-negative stock count is required' });
+        }
+
+        // 1. Insert directly into product_catalog
+        const catInsert = await pool.query(
+            `INSERT INTO product_catalog (
+                title, description, category, branch, course_type,
+                semester, subject, author, isbn, cover_photo_url,
+                created_by, is_active
+            ) VALUES (
+                $1, $2, $3, $4, $5,
+                $6, $7, $8, $9, $10,
+                $11, true
+            ) RETURNING *`,
+            [
+                title.trim(),
+                description ? description.trim() : null,
+                prodCategory,
+                branch ? branch.trim() : null,
+                course_type ? course_type.trim() : null,
+                semester ? semester.trim() : null,
+                subject ? subject.trim() : null,
+                author ? author.trim() : null,
+                isbn ? isbn.trim() : null,
+                cover_photo_url ? cover_photo_url.trim() : null,
+                req.user?.user_id || null
+            ]
+        );
+
+        const newProduct = catInsert.rows[0];
+
+        // 2. Immediately add to shop_inventory
+        const invInsert = await pool.query(
+            `INSERT INTO shop_inventory (
+                shop_id, product_id, price, stock_count, is_available, updated_at
+            ) VALUES (
+                $1, $2, $3, $4, ($4 > 0), NOW()
+            ) RETURNING *`,
+            [req.shop_id, newProduct.product_id, numPrice, numStock]
+        );
+
+        res.status(201).json({
+            success: true,
+            message: 'Custom product created and listed in your shop inventory successfully',
+            product: newProduct,
+            inventory_item: invInsert.rows[0]
+        });
+    } catch (err) {
+        console.error('Error creating custom product:', err);
+        res.status(500).json({ error: 'Failed to create product: ' + err.message });
+    }
+});
+
+/**
+ * @route   PUT /api/shop/inventory/custom-product/:productId
+ * @desc    Update custom product details and pricing
+ * @access  Private (Shopkeeper)
+ */
+router.put('/custom-product/:productId', async (req, res) => {
+    try {
+        const { productId } = req.params;
+        const {
+            title,
+            category,
+            price,
+            stock_count,
+            description,
+            branch,
+            course_type,
+            semester,
+            subject,
+            author,
+            isbn,
+            cover_photo_url
+        } = req.body;
+
+        // Verify shop owns this in inventory
+        const invRes = await pool.query(
+            'SELECT inventory_id FROM shop_inventory WHERE shop_id = $1 AND product_id = $2',
+            [req.shop_id, productId]
+        );
+        if (invRes.rows.length === 0) {
+            return res.status(404).json({ error: 'Product not found in your shop inventory' });
+        }
+
+        // Update product_catalog fields
+        await pool.query(
+            `UPDATE product_catalog SET
+                title = COALESCE($1, title),
+                description = COALESCE($2, description),
+                category = COALESCE($3, category),
+                branch = COALESCE($4, branch),
+                course_type = COALESCE($5, course_type),
+                semester = COALESCE($6, semester),
+                subject = COALESCE($7, subject),
+                author = COALESCE($8, author),
+                isbn = COALESCE($9, isbn),
+                cover_photo_url = COALESCE($10, cover_photo_url)
+             WHERE product_id = $11`,
+            [
+                title !== undefined ? title.trim() : null,
+                description !== undefined ? description.trim() : null,
+                category !== undefined ? category.trim() : null,
+                branch !== undefined ? branch.trim() : null,
+                course_type !== undefined ? course_type.trim() : null,
+                semester !== undefined ? semester.trim() : null,
+                subject !== undefined ? subject.trim() : null,
+                author !== undefined ? author.trim() : null,
+                isbn !== undefined ? isbn.trim() : null,
+                cover_photo_url !== undefined ? cover_photo_url.trim() : null,
+                productId
+            ]
+        );
+
+        // Update inventory price & stock if supplied
+        const invUpdates = [];
+        const invParams = [req.shop_id, productId];
+        let pIdx = 3;
+
+        if (price !== undefined) {
+            const numPrice = parseFloat(price);
+            if (!isNaN(numPrice) && numPrice >= 0) {
+                invUpdates.push(`price = $${pIdx++}`);
+                invParams.push(numPrice);
+            }
+        }
+
+        if (stock_count !== undefined) {
+            const numStock = parseInt(stock_count, 10);
+            if (!isNaN(numStock) && numStock >= 0) {
+                invUpdates.push(`stock_count = $${pIdx++}`);
+                invUpdates.push(`is_available = ($${pIdx - 1} > 0)`);
+                invParams.push(numStock);
+            }
+        }
+
+        if (invUpdates.length > 0) {
+            invUpdates.push('updated_at = NOW()');
+            await pool.query(
+                `UPDATE shop_inventory SET ${invUpdates.join(', ')} WHERE shop_id = $1 AND product_id = $2`,
+                invParams
+            );
+        }
+
+        res.json({ success: true, message: 'Product updated successfully' });
+    } catch (err) {
+        console.error('Error updating custom product:', err);
+        res.status(500).json({ error: 'Failed to update custom product: ' + err.message });
     }
 });
 

@@ -24,7 +24,40 @@ const MyListings = () => {
   const [editingItem, setEditingItem] = useState(null);
   const [newPrice, setNewPrice] = useState('');
 
-  const categories = ['All', 'Books', 'Manuals', 'Notes', 'Forms', 'Other'];
+  // Add Custom Product modal
+  const [showAddCustomModal, setShowAddCustomModal] = useState(false);
+  const [customForm, setCustomForm] = useState({
+    title: '',
+    category: 'Notes',
+    price: '',
+    stock_count: '10',
+    description: '',
+    branch: 'Computer Science',
+    course_type: 'Engineering',
+    semester: '3',
+    subject: '',
+    author: '',
+    cover_photo_url: '',
+  });
+
+  // Edit Product Details modal
+  const [editingProduct, setEditingProduct] = useState(null);
+  const [uploadingImage, setUploadingImage] = useState(false);
+
+  const categories = ['All', 'Books', 'Manuals', 'Notes', 'Forms', 'Stationery', 'Other'];
+  const productCategories = ['Books', 'Manuals', 'Notes', 'Forms', 'Stationery', 'Other'];
+  const branchOptions = [
+    'Computer Science',
+    'Information Technology',
+    'Mechanical',
+    'Civil',
+    'Electrical',
+    'Electronics & Telecomm',
+    'First Year (FE)',
+    'Commerce & Arts',
+    'General / School',
+    'Other'
+  ];
 
   useEffect(() => {
     fetchInventory();
@@ -122,6 +155,99 @@ const MyListings = () => {
     }
   };
 
+  const handleImageUpload = async (e, isEditMode = false) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploadingImage(true);
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      const res = await api.post('/upload', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      });
+      const fileUrl = res.data?.file?.url || res.data?.url;
+      if (fileUrl) {
+        if (isEditMode) {
+          setEditingProduct(prev => ({ ...prev, cover_photo_url: fileUrl }));
+        } else {
+          setCustomForm(prev => ({ ...prev, cover_photo_url: fileUrl }));
+        }
+      }
+    } catch (err) {
+      console.error('Image upload failed:', err);
+      alert('Image upload failed. You can paste an image URL instead.');
+    } finally {
+      setUploadingImage(false);
+    }
+  };
+
+  const handleCreateCustomProduct = async (e) => {
+    e.preventDefault();
+    if (!customForm.title.trim()) {
+      alert('Please enter a product title.');
+      return;
+    }
+    const priceNum = parseFloat(customForm.price);
+    if (isNaN(priceNum) || priceNum < 0) {
+      alert('Please enter a valid selling price.');
+      return;
+    }
+    setIsSubmitting(true);
+    try {
+      await api.post('/shop/inventory/custom-product', {
+        ...customForm,
+        price: priceNum,
+        stock_count: parseInt(customForm.stock_count || '0', 10),
+      });
+      setShowAddCustomModal(false);
+      setCustomForm({
+        title: '',
+        category: 'Notes',
+        price: '',
+        stock_count: '10',
+        description: '',
+        branch: 'Computer Science',
+        course_type: 'Engineering',
+        semester: '3',
+        subject: '',
+        author: '',
+        cover_photo_url: '',
+      });
+      fetchInventory();
+    } catch (err) {
+      alert(err.response?.data?.error || 'Failed to create product');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleSaveProductEdit = async (e) => {
+    e.preventDefault();
+    if (!editingProduct) return;
+    setIsSubmitting(true);
+    try {
+      await api.put(`/shop/inventory/custom-product/${editingProduct.product_id}`, {
+        title: editingProduct.title,
+        category: editingProduct.category,
+        description: editingProduct.description,
+        branch: editingProduct.branch,
+        course_type: editingProduct.course_type,
+        semester: editingProduct.semester,
+        subject: editingProduct.subject,
+        author: editingProduct.author,
+        cover_photo_url: editingProduct.cover_photo_url,
+        price: parseFloat(editingProduct.price),
+        stock_count: parseInt(editingProduct.stock_count, 10),
+      });
+      setEditingProduct(null);
+      fetchInventory();
+    } catch (err) {
+      alert(err.response?.data?.error || 'Failed to update product');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   // Stats calculation
   const totalItems = inventory.length;
   const inStockItems = inventory.filter(i => i.stock_count > 0).length;
@@ -141,13 +267,22 @@ const MyListings = () => {
           </p>
         </div>
 
-        <button
-          onClick={() => setShowCatalogModal(true)}
-          className="bg-primary hover:bg-primary/90 text-on-primary px-5 py-2.5 rounded-xl font-label-lg flex items-center gap-2 shadow-sm transition-all shrink-0"
-        >
-          <span className="material-symbols-outlined text-[20px]">add_shopping_cart</span>
-          Add from Master Catalog
-        </button>
+        <div className="flex items-center gap-2.5 shrink-0 flex-wrap">
+          <button
+            onClick={() => setShowAddCustomModal(true)}
+            className="bg-primary hover:bg-primary/90 text-on-primary px-5 py-2.5 rounded-xl font-label-lg flex items-center gap-2 shadow-sm transition-all cursor-pointer font-bold text-xs"
+          >
+            <span className="material-symbols-outlined text-[18px]">add_circle</span>
+            Add Product
+          </button>
+          <button
+            onClick={() => setShowCatalogModal(true)}
+            className="bg-surface-container hover:bg-outline-variant/20 text-on-surface border border-outline-variant/40 px-4 py-2.5 rounded-xl font-label-lg flex items-center gap-2 transition-all cursor-pointer font-semibold text-xs"
+          >
+            <span className="material-symbols-outlined text-[18px]">menu_book</span>
+            Browse Catalog
+          </button>
+        </div>
       </div>
 
       {/* Quick Metrics */}
@@ -191,7 +326,7 @@ const MyListings = () => {
             <button
               key={cat}
               onClick={() => setSelectedCategory(cat)}
-              className={`px-4 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-colors ${
+              className={`px-4 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-colors cursor-pointer ${
                 selectedCategory === cat
                   ? 'bg-primary text-on-primary'
                   : 'bg-surface-container-high text-on-surface-variant hover:bg-outline-variant/20'
@@ -217,7 +352,7 @@ const MyListings = () => {
           </div>
           <button
             onClick={fetchInventory}
-            className="px-3 py-2 bg-surface-container-high hover:bg-outline-variant/20 rounded-xl text-xs font-semibold text-on-surface border border-outline-variant/40"
+            className="px-3 py-2 bg-surface-container-high hover:bg-outline-variant/20 rounded-xl text-xs font-semibold text-on-surface border border-outline-variant/40 cursor-pointer"
           >
             Search
           </button>
@@ -237,15 +372,24 @@ const MyListings = () => {
           </div>
           <h3 className="text-lg font-bold text-on-surface mb-1">No items found in your inventory</h3>
           <p className="text-xs max-w-sm mb-6">
-            Tap the button below to browse standard manuals, books, and forms from the Master Catalog and set your stock & price.
+            Add your own products directly to your shop inventory, or pick standard titles from the master catalog.
           </p>
-          <button
-            onClick={() => setShowCatalogModal(true)}
-            className="bg-primary text-on-primary px-5 py-2.5 rounded-xl text-xs font-bold flex items-center gap-2"
-          >
-            <span className="material-symbols-outlined text-[18px]">add_shopping_cart</span>
-            Add from Master Catalog
-          </button>
+          <div className="flex items-center gap-3 flex-wrap justify-center">
+            <button
+              onClick={() => setShowAddCustomModal(true)}
+              className="bg-primary text-on-primary px-5 py-2.5 rounded-xl text-xs font-bold flex items-center gap-2 shadow cursor-pointer"
+            >
+              <span className="material-symbols-outlined text-[18px]">add_circle</span>
+              Add Your Own Product
+            </button>
+            <button
+              onClick={() => setShowCatalogModal(true)}
+              className="bg-surface-container-high hover:bg-outline-variant/20 text-on-surface border border-outline-variant/40 px-4 py-2.5 rounded-xl text-xs font-semibold flex items-center gap-2 cursor-pointer"
+            >
+              <span className="material-symbols-outlined text-[18px]">menu_book</span>
+              Browse Master Catalog
+            </button>
+          </div>
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -265,11 +409,20 @@ const MyListings = () => {
                   {item.cover_photo_url ? (
                     <img src={item.cover_photo_url} alt={item.title || 'Product listing thumbnail'} className="w-full h-full object-cover" />
                   ) : (
-                    <span className="material-symbols-outlined text-5xl text-on-surface-variant/40">menu_book</span>
+                    <span className="material-symbols-outlined text-5xl text-on-surface-variant/40">
+                      {item.category === 'Books' ? 'menu_book' : item.category === 'Manuals' ? 'assignment' : item.category === 'Forms' ? 'description' : item.category === 'Stationery' ? 'draw' : 'edit_note'}
+                    </span>
                   )}
-                  <span className="absolute top-3 left-3 bg-black/70 backdrop-blur-md text-white text-[10px] font-bold uppercase tracking-wider px-2.5 py-1 rounded-full">
-                    {item.category}
-                  </span>
+                  <div className="absolute top-3 left-3 flex items-center gap-1.5">
+                    <span className="bg-black/70 backdrop-blur-md text-white text-[10px] font-bold uppercase tracking-wider px-2.5 py-1 rounded-full">
+                      {item.category}
+                    </span>
+                    {item.is_custom && (
+                      <span className="bg-primary/90 text-on-primary text-[10px] font-bold px-2 py-0.5 rounded-full shadow-sm">
+                        Custom
+                      </span>
+                    )}
+                  </div>
                   <div className="absolute top-3 right-3">
                     {isOutOfStock ? (
                       <span className="bg-rose-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-md shadow">
@@ -297,30 +450,40 @@ const MyListings = () => {
                     {item.subject && (
                       <p className="text-xs text-on-surface-variant/80 mt-0.5">Subject: {item.subject}</p>
                     )}
+                    {item.description && (
+                      <p className="text-[11px] text-on-surface-variant/70 mt-1 line-clamp-2">{item.description}</p>
+                    )}
                   </div>
 
                   {/* Price & Stock Adjustment Section */}
                   <div className="mt-4 pt-3 border-t border-outline-variant/30">
                     <div className="flex items-center justify-between mb-3">
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-xs text-on-surface-variant">Your Price:</span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-on-surface-variant">Price:</span>
                         <span className="font-extrabold text-base text-primary">₹{item.price}</span>
                         <button
                           onClick={() => {
                             setEditingItem(item);
                             setNewPrice(item.price);
                           }}
-                          className="text-on-surface-variant hover:text-primary material-symbols-outlined text-[16px]"
-                          title="Edit Price"
+                          className="text-on-surface-variant hover:text-primary material-symbols-outlined text-[16px] cursor-pointer"
+                          title="Quick Edit Price"
                         >
                           edit
+                        </button>
+                        <button
+                          onClick={() => setEditingProduct({ ...item })}
+                          className="text-on-surface-variant hover:text-primary material-symbols-outlined text-[16px] cursor-pointer"
+                          title="Edit Full Product Details"
+                        >
+                          tune
                         </button>
                       </div>
 
                       <button
                         onClick={() => handleDeleteItem(item.inventory_id, item.title)}
-                        className="text-rose-400 hover:text-rose-500 material-symbols-outlined text-[18px]"
-                        title="Remove from inventory"
+                        className="text-rose-400 hover:text-rose-500 material-symbols-outlined text-[18px] cursor-pointer"
+                        title="Remove from shop inventory"
                       >
                         delete
                       </button>
@@ -333,20 +496,20 @@ const MyListings = () => {
                         <button
                           onClick={() => handleStockUpdate(item.inventory_id, -1)}
                           disabled={item.stock_count <= 0}
-                          className="w-7 h-7 bg-surface-container rounded-lg flex items-center justify-center font-bold text-on-surface hover:bg-outline-variant/30 disabled:opacity-40"
+                          className="w-7 h-7 bg-surface-container rounded-lg flex items-center justify-center font-bold text-on-surface hover:bg-outline-variant/30 disabled:opacity-40 cursor-pointer"
                         >
                           -
                         </button>
                         <span className="w-8 text-center font-black text-sm text-on-surface">{item.stock_count}</span>
                         <button
                           onClick={() => handleStockUpdate(item.inventory_id, 1)}
-                          className="w-7 h-7 bg-surface-container rounded-lg flex items-center justify-center font-bold text-on-surface hover:bg-outline-variant/30"
+                          className="w-7 h-7 bg-surface-container rounded-lg flex items-center justify-center font-bold text-on-surface hover:bg-outline-variant/30 cursor-pointer"
                         >
                           +
                         </button>
                         <button
                           onClick={() => handleStockUpdate(item.inventory_id, 10)}
-                          className="bg-primary/10 hover:bg-primary/20 text-primary text-[10px] font-bold px-2 py-1.5 rounded-lg ml-1"
+                          className="bg-primary/10 hover:bg-primary/20 text-primary text-[10px] font-bold px-2 py-1.5 rounded-lg ml-1 cursor-pointer"
                         >
                           +10
                         </button>
@@ -360,7 +523,372 @@ const MyListings = () => {
         </div>
       )}
 
-      {/* Master Catalog Browser Modal */}
+      {/* ── Modal 1: Add Custom Product Directly ── */}
+      {showAddCustomModal && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4 overflow-y-auto">
+          <div className="bg-surface border border-outline-variant/40 rounded-3xl p-6 w-full max-w-xl max-h-[92vh] flex flex-col shadow-2xl my-auto">
+            <div className="flex justify-between items-center pb-4 border-b border-outline-variant/30 shrink-0">
+              <div>
+                <h2 className="text-lg font-bold text-on-surface flex items-center gap-2">
+                  <span className="material-symbols-outlined text-primary">add_circle</span>
+                  Add Product to Shop
+                </h2>
+                <p className="text-xs text-on-surface-variant">Create and list a custom book, manual, notes, form, or stationery item.</p>
+              </div>
+              <button
+                onClick={() => setShowAddCustomModal(false)}
+                className="text-on-surface-variant hover:text-on-surface material-symbols-outlined cursor-pointer"
+              >
+                close
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateCustomProduct} className="flex-1 overflow-y-auto py-4 space-y-4 pr-1">
+              {/* Title */}
+              <div>
+                <label className="block text-xs font-bold text-on-surface mb-1">Product Title *</label>
+                <input
+                  required
+                  type="text"
+                  placeholder="e.g. Data Structures Complete Handwritten Notes"
+                  value={customForm.title}
+                  onChange={(e) => setCustomForm({ ...customForm, title: e.target.value })}
+                  className="w-full bg-surface-container px-3.5 py-2.5 text-xs rounded-xl border border-outline-variant/40 focus:border-primary outline-none text-on-surface font-medium"
+                />
+              </div>
+
+              {/* Category & Price & Stock in 3 columns */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-on-surface mb-1">Category *</label>
+                  <select
+                    value={customForm.category}
+                    onChange={(e) => setCustomForm({ ...customForm, category: e.target.value })}
+                    className="w-full bg-surface-container px-3 py-2.5 text-xs rounded-xl border border-outline-variant/40 focus:border-primary outline-none text-on-surface cursor-pointer"
+                  >
+                    {productCategories.map(c => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-on-surface mb-1">Selling Price (₹) *</label>
+                  <input
+                    required
+                    type="number"
+                    step="0.5"
+                    min="0"
+                    placeholder="e.g. 50"
+                    value={customForm.price}
+                    onChange={(e) => setCustomForm({ ...customForm, price: e.target.value })}
+                    className="w-full bg-surface-container px-3 py-2.5 text-xs rounded-xl border border-outline-variant/40 focus:border-primary outline-none text-on-surface font-bold text-primary"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-on-surface mb-1">Initial Stock Count *</label>
+                  <input
+                    required
+                    type="number"
+                    min="0"
+                    placeholder="e.g. 15"
+                    value={customForm.stock_count}
+                    onChange={(e) => setCustomForm({ ...customForm, stock_count: e.target.value })}
+                    className="w-full bg-surface-container px-3 py-2.5 text-xs rounded-xl border border-outline-variant/40 focus:border-primary outline-none text-on-surface font-bold"
+                  />
+                </div>
+              </div>
+
+              {/* Branch / Stream & Semester */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-on-surface mb-1">Branch / Department (Optional)</label>
+                  <select
+                    value={customForm.branch}
+                    onChange={(e) => setCustomForm({ ...customForm, branch: e.target.value })}
+                    className="w-full bg-surface-container px-3 py-2.5 text-xs rounded-xl border border-outline-variant/40 focus:border-primary outline-none text-on-surface cursor-pointer"
+                  >
+                    <option value="">None / General</option>
+                    {branchOptions.map(b => <option key={b} value={b}>{b}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-on-surface mb-1">Semester / Year (Optional)</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Sem 3 or 2nd Year"
+                    value={customForm.semester}
+                    onChange={(e) => setCustomForm({ ...customForm, semester: e.target.value })}
+                    className="w-full bg-surface-container px-3 py-2.5 text-xs rounded-xl border border-outline-variant/40 focus:border-primary outline-none text-on-surface"
+                  />
+                </div>
+              </div>
+
+              {/* Subject & Author */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-on-surface mb-1">Subject (Optional)</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Data Structures & Algorithms"
+                    value={customForm.subject}
+                    onChange={(e) => setCustomForm({ ...customForm, subject: e.target.value })}
+                    className="w-full bg-surface-container px-3 py-2.5 text-xs rounded-xl border border-outline-variant/40 focus:border-primary outline-none text-on-surface"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-on-surface mb-1">Author / Publisher / Faculty (Optional)</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Department Faculty or TechKnowledge"
+                    value={customForm.author}
+                    onChange={(e) => setCustomForm({ ...customForm, author: e.target.value })}
+                    className="w-full bg-surface-container px-3 py-2.5 text-xs rounded-xl border border-outline-variant/40 focus:border-primary outline-none text-on-surface"
+                  />
+                </div>
+              </div>
+
+              {/* Description */}
+              <div>
+                <label className="block text-xs font-bold text-on-surface mb-1">Description / Notes (Optional)</label>
+                <textarea
+                  rows="2"
+                  placeholder="e.g. Covers all 5 units, with solved question bank, spiral bound A4 sheets."
+                  value={customForm.description}
+                  onChange={(e) => setCustomForm({ ...customForm, description: e.target.value })}
+                  className="w-full bg-surface-container px-3.5 py-2 text-xs rounded-xl border border-outline-variant/40 focus:border-primary outline-none text-on-surface"
+                />
+              </div>
+
+              {/* Image / Thumbnail */}
+              <div>
+                <label className="block text-xs font-bold text-on-surface mb-1">Product Photo / Thumbnail (Optional)</label>
+                <div className="flex items-center gap-3">
+                  <div className="w-14 h-14 rounded-xl bg-surface-container-highest border border-outline-variant/40 overflow-hidden flex items-center justify-center shrink-0">
+                    {customForm.cover_photo_url ? (
+                      <img src={customForm.cover_photo_url} alt="Product Preview" className="w-full h-full object-cover" />
+                    ) : (
+                      <span className="material-symbols-outlined text-on-surface-variant text-xl">image</span>
+                    )}
+                  </div>
+                  <div className="flex-1 flex flex-col gap-1.5">
+                    <input
+                      type="url"
+                      placeholder="Paste image URL (or upload below)"
+                      value={customForm.cover_photo_url}
+                      onChange={(e) => setCustomForm({ ...customForm, cover_photo_url: e.target.value })}
+                      className="w-full bg-surface-container px-3 py-1.5 text-xs rounded-lg border border-outline-variant/40 focus:border-primary outline-none text-on-surface"
+                    />
+                    <label className="inline-flex items-center gap-1.5 text-primary text-xs font-bold cursor-pointer hover:underline">
+                      <span className="material-symbols-outlined text-[16px]">upload</span>
+                      <span>{uploadingImage ? 'Uploading image...' : 'Upload Image from Computer'}</span>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={(e) => handleImageUpload(e, false)}
+                        disabled={uploadingImage}
+                      />
+                    </label>
+                  </div>
+                </div>
+              </div>
+
+              <div className="pt-2 flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => setShowAddCustomModal(false)}
+                  className="flex-1 py-2.5 text-xs rounded-xl bg-surface-container hover:bg-outline-variant/20 text-on-surface font-bold cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSubmitting}
+                  className="flex-1 py-2.5 text-xs rounded-xl bg-primary text-on-primary font-bold shadow hover:bg-primary/90 cursor-pointer disabled:opacity-50"
+                >
+                  {isSubmitting ? 'Creating Product...' : 'Add to Shop Listings'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ── Modal 2: Edit Product Details ── */}
+      {editingProduct && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4 overflow-y-auto">
+          <div className="bg-surface border border-outline-variant/40 rounded-3xl p-6 w-full max-w-xl max-h-[92vh] flex flex-col shadow-2xl my-auto">
+            <div className="flex justify-between items-center pb-4 border-b border-outline-variant/30 shrink-0">
+              <div>
+                <h2 className="text-lg font-bold text-on-surface flex items-center gap-2">
+                  <span className="material-symbols-outlined text-primary">edit_note</span>
+                  Edit Product Details
+                </h2>
+                <p className="text-xs text-on-surface-variant">Update item details, price, or stock levels.</p>
+              </div>
+              <button
+                onClick={() => setEditingProduct(null)}
+                className="text-on-surface-variant hover:text-on-surface material-symbols-outlined cursor-pointer"
+              >
+                close
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveProductEdit} className="flex-1 overflow-y-auto py-4 space-y-4 pr-1">
+              <div>
+                <label className="block text-xs font-bold text-on-surface mb-1">Product Title *</label>
+                <input
+                  required
+                  type="text"
+                  value={editingProduct.title || ''}
+                  onChange={(e) => setEditingProduct({ ...editingProduct, title: e.target.value })}
+                  className="w-full bg-surface-container px-3.5 py-2 text-xs rounded-xl border border-outline-variant/40 focus:border-primary outline-none text-on-surface font-medium"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-on-surface mb-1">Category *</label>
+                  <select
+                    value={editingProduct.category || 'Other'}
+                    onChange={(e) => setEditingProduct({ ...editingProduct, category: e.target.value })}
+                    className="w-full bg-surface-container px-3 py-2 text-xs rounded-xl border border-outline-variant/40 focus:border-primary outline-none text-on-surface cursor-pointer"
+                  >
+                    {productCategories.map(c => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-on-surface mb-1">Price (₹) *</label>
+                  <input
+                    required
+                    type="number"
+                    step="0.5"
+                    min="0"
+                    value={editingProduct.price || ''}
+                    onChange={(e) => setEditingProduct({ ...editingProduct, price: e.target.value })}
+                    className="w-full bg-surface-container px-3 py-2 text-xs rounded-xl border border-outline-variant/40 focus:border-primary outline-none text-on-surface font-bold text-primary"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-on-surface mb-1">Stock Count *</label>
+                  <input
+                    required
+                    type="number"
+                    min="0"
+                    value={editingProduct.stock_count !== undefined ? editingProduct.stock_count : ''}
+                    onChange={(e) => setEditingProduct({ ...editingProduct, stock_count: e.target.value })}
+                    className="w-full bg-surface-container px-3 py-2 text-xs rounded-xl border border-outline-variant/40 focus:border-primary outline-none text-on-surface font-bold"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-on-surface mb-1">Branch / Department</label>
+                  <select
+                    value={editingProduct.branch || ''}
+                    onChange={(e) => setEditingProduct({ ...editingProduct, branch: e.target.value })}
+                    className="w-full bg-surface-container px-3 py-2 text-xs rounded-xl border border-outline-variant/40 focus:border-primary outline-none text-on-surface cursor-pointer"
+                  >
+                    <option value="">None / General</option>
+                    {branchOptions.map(b => <option key={b} value={b}>{b}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-on-surface mb-1">Semester / Year</label>
+                  <input
+                    type="text"
+                    value={editingProduct.semester || ''}
+                    onChange={(e) => setEditingProduct({ ...editingProduct, semester: e.target.value })}
+                    className="w-full bg-surface-container px-3 py-2 text-xs rounded-xl border border-outline-variant/40 focus:border-primary outline-none text-on-surface"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-on-surface mb-1">Subject</label>
+                  <input
+                    type="text"
+                    value={editingProduct.subject || ''}
+                    onChange={(e) => setEditingProduct({ ...editingProduct, subject: e.target.value })}
+                    className="w-full bg-surface-container px-3 py-2 text-xs rounded-xl border border-outline-variant/40 focus:border-primary outline-none text-on-surface"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-on-surface mb-1">Author / Faculty</label>
+                  <input
+                    type="text"
+                    value={editingProduct.author || ''}
+                    onChange={(e) => setEditingProduct({ ...editingProduct, author: e.target.value })}
+                    className="w-full bg-surface-container px-3 py-2 text-xs rounded-xl border border-outline-variant/40 focus:border-primary outline-none text-on-surface"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-on-surface mb-1">Description</label>
+                <textarea
+                  rows="2"
+                  value={editingProduct.description || ''}
+                  onChange={(e) => setEditingProduct({ ...editingProduct, description: e.target.value })}
+                  className="w-full bg-surface-container px-3.5 py-2 text-xs rounded-xl border border-outline-variant/40 focus:border-primary outline-none text-on-surface"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-on-surface mb-1">Product Photo</label>
+                <div className="flex items-center gap-3">
+                  <div className="w-14 h-14 rounded-xl bg-surface-container-highest border border-outline-variant/40 overflow-hidden flex items-center justify-center shrink-0">
+                    {editingProduct.cover_photo_url ? (
+                      <img src={editingProduct.cover_photo_url} alt="Product Preview" className="w-full h-full object-cover" />
+                    ) : (
+                      <span className="material-symbols-outlined text-on-surface-variant text-xl">image</span>
+                    )}
+                  </div>
+                  <div className="flex-1 flex flex-col gap-1.5">
+                    <input
+                      type="url"
+                      placeholder="Paste image URL"
+                      value={editingProduct.cover_photo_url || ''}
+                      onChange={(e) => setEditingProduct({ ...editingProduct, cover_photo_url: e.target.value })}
+                      className="w-full bg-surface-container px-3 py-1.5 text-xs rounded-lg border border-outline-variant/40 focus:border-primary outline-none text-on-surface"
+                    />
+                    <label className="inline-flex items-center gap-1.5 text-primary text-xs font-bold cursor-pointer hover:underline">
+                      <span className="material-symbols-outlined text-[16px]">upload</span>
+                      <span>{uploadingImage ? 'Uploading...' : 'Replace Photo'}</span>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={(e) => handleImageUpload(e, true)}
+                        disabled={uploadingImage}
+                      />
+                    </label>
+                  </div>
+                </div>
+              </div>
+
+              <div className="pt-2 flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => setEditingProduct(null)}
+                  className="flex-1 py-2.5 text-xs rounded-xl bg-surface-container hover:bg-outline-variant/20 text-on-surface font-bold cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSubmitting}
+                  className="flex-1 py-2.5 text-xs rounded-xl bg-primary text-on-primary font-bold shadow hover:bg-primary/90 cursor-pointer disabled:opacity-50"
+                >
+                  {isSubmitting ? 'Saving Changes...' : 'Save Product'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ── Modal 3: Master Catalog Browser Modal (Optional Alternative) ── */}
       {showCatalogModal && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div 
@@ -373,14 +901,14 @@ const MyListings = () => {
                   <span className="material-symbols-outlined text-primary">menu_book</span>
                   Master Product Catalog
                 </h2>
-                <p className="text-xs text-on-surface-variant">Select an item to add to your shop inventory</p>
+                <p className="text-xs text-on-surface-variant">Select a standard college title to stock in your shop</p>
               </div>
               <button
                 onClick={() => {
                   setShowCatalogModal(false);
                   setSelectedProduct(null);
                 }}
-                className="text-on-surface-variant hover:text-on-surface material-symbols-outlined"
+                className="text-on-surface-variant hover:text-on-surface material-symbols-outlined cursor-pointer"
               >
                 close
               </button>
@@ -416,7 +944,7 @@ const MyListings = () => {
                 </div>
               ) : catalogItems.length === 0 ? (
                 <div className="py-12 text-center text-on-surface-variant">
-                  No catalog products found. Contact administrator to add new college titles.
+                  No catalog products found. You can add your own custom product using the "Add Product" button!
                 </div>
               ) : (
                 catalogItems.map(prod => (
@@ -459,7 +987,7 @@ const MyListings = () => {
                             setStockPrice('45');
                             setStockQuantity('10');
                           }}
-                          className="bg-primary hover:bg-primary/90 text-on-primary text-xs font-bold px-4 py-2 rounded-xl flex items-center gap-1 shadow-sm"
+                          className="bg-primary hover:bg-primary/90 text-on-primary text-xs font-bold px-4 py-2 rounded-xl flex items-center gap-1 shadow-sm cursor-pointer"
                         >
                           <span className="material-symbols-outlined text-[16px]">add</span>
                           Stock This Item
@@ -476,7 +1004,7 @@ const MyListings = () => {
               <form onSubmit={handleAddToInventory} className="mt-4 pt-4 border-t border-outline-variant/30 bg-surface-container p-4 rounded-2xl">
                 <div className="text-xs font-bold text-on-surface mb-3 flex items-center justify-between">
                   <span>Set Price & Stock for: <strong className="text-primary">{selectedProduct.title}</strong></span>
-                  <button type="button" onClick={() => setSelectedProduct(null)} className="text-on-surface-variant hover:text-on-surface">Cancel</button>
+                  <button type="button" onClick={() => setSelectedProduct(null)} className="text-on-surface-variant hover:text-on-surface cursor-pointer">Cancel</button>
                 </div>
                 <div className="grid grid-cols-2 gap-3 mb-3">
                   <div>
@@ -508,7 +1036,7 @@ const MyListings = () => {
                 <button
                   type="submit"
                   disabled={isSubmitting}
-                  className="w-full bg-primary hover:bg-primary/90 text-on-primary py-2.5 rounded-xl text-xs font-bold shadow transition-all disabled:opacity-50"
+                  className="w-full bg-primary hover:bg-primary/90 text-on-primary py-2.5 rounded-xl text-xs font-bold shadow transition-all disabled:opacity-50 cursor-pointer"
                 >
                   {isSubmitting ? 'Saving...' : 'Confirm & Add to Shop Inventory'}
                 </button>
@@ -518,7 +1046,7 @@ const MyListings = () => {
         </div>
       )}
 
-      {/* Edit Price Modal */}
+      {/* ── Modal 4: Quick Edit Price Modal ── */}
       {editingItem && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="bg-surface border border-outline-variant/30 rounded-2xl p-6 w-full max-w-sm shadow-xl">
@@ -540,13 +1068,13 @@ const MyListings = () => {
                 <button
                   type="button"
                   onClick={() => setEditingItem(null)}
-                  className="flex-1 py-2 text-xs rounded-xl bg-surface-container hover:bg-outline-variant/20 text-on-surface font-bold"
+                  className="flex-1 py-2 text-xs rounded-xl bg-surface-container hover:bg-outline-variant/20 text-on-surface font-bold cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="flex-1 py-2 text-xs rounded-xl bg-primary text-on-primary font-bold shadow"
+                  className="flex-1 py-2 text-xs rounded-xl bg-primary text-on-primary font-bold shadow cursor-pointer"
                 >
                   Save Price
                 </button>
