@@ -6,6 +6,7 @@ const { randomUUID } = require('crypto');
 const auth = require('../middleware/auth');
 const upload = require('../config/multer');
 const { getStorage } = require('../config/firebase');
+const documentConverter = require('../services/documentConverter');
 
 const bucket = getStorage().bucket();
 
@@ -99,6 +100,53 @@ const uploadToFirebase = (file, printMode = 'normal') => {
     });
 };
 
+/**
+ * Handles server-side document conversion (Excel, text, etc. to PDF) before uploading to Firebase
+ */
+const processAndUploadFile = async (file, printMode = 'normal') => {
+    let convertedPath = null;
+    let fileToUpload = file;
+    let pageCount = 1;
+    let sourceFormat = path.extname(file.originalname || '').replace('.', '').toLowerCase();
+
+    try {
+        if (file.path && documentConverter.isConvertible(file.originalname || file.path)) {
+            console.log(`[UploadRoute] Document conversion triggered for: ${file.originalname}`);
+            const conversion = await documentConverter.convertToPdf(file.path, file.originalname);
+            convertedPath = conversion.outputPath;
+            pageCount = conversion.pageCount;
+            sourceFormat = conversion.sourceFormat;
+
+            // Generate clean target PDF filename preserving base original name
+            const parsedName = path.parse(file.originalname || 'document');
+            const convertedFileName = `${parsedName.name}.pdf`;
+
+            fileToUpload = {
+                ...file,
+                path: conversion.outputPath,
+                originalname: convertedFileName,
+                mimetype: 'application/pdf',
+                size: conversion.size
+            };
+        } else if (file.path && path.extname(file.originalname || '').toLowerCase() === '.pdf') {
+            pageCount = await documentConverter.getPdfPageCount(file.path);
+        }
+
+        const uploadResult = await uploadToFirebase(fileToUpload, printMode);
+
+        return {
+            ...uploadResult,
+            page_count: pageCount,
+            source_format: sourceFormat,
+            original_name: file.originalname // Maintain customer's original display name
+        };
+    } finally {
+        if (convertedPath) {
+            await safeDelete(convertedPath);
+        }
+    }
+};
+
 // POST /api/upload — Single file
 router.post('/', auth, upload.single('file'), async (req, res) => {
     try {
@@ -108,8 +156,8 @@ router.post('/', auth, upload.single('file'), async (req, res) => {
 
         const printMode = req.query.print_mode || req.query.mode || req.body?.print_mode || req.body?.mode || 'normal';
 
-        // Stream file from disk to Firebase Storage (isolated path for secure mode)
-        const result = await uploadToFirebase(req.file, printMode);
+        // Convert document to PDF if needed and stream to Firebase Storage
+        const result = await processAndUploadFile(req.file, printMode);
 
         return res.status(201).json({
             message: 'File uploaded successfully',
@@ -118,15 +166,17 @@ router.post('/', auth, upload.single('file'), async (req, res) => {
                 public_id: result.public_id,
                 print_mode: result.print_mode,
                 storage_path: result.storage_path,
-                original_name: req.file.originalname,
+                original_name: result.original_name,
                 format: result.format,
+                source_format: result.source_format,
+                page_count: result.page_count,
                 size: result.bytes
             }
         });
 
     } catch (err) {
         console.error('Upload error:', err);
-        res.status(500).json({ error: 'File upload failed' });
+        res.status(500).json({ error: err.message || 'File upload failed' });
     } finally {
         if (req.file && req.file.path) {
             await safeDelete(req.file.path);
@@ -142,7 +192,7 @@ router.post('/guest', upload.single('file'), async (req, res) => {
         }
 
         const printMode = req.query.print_mode || req.query.mode || req.body?.print_mode || req.body?.mode || 'normal';
-        const result = await uploadToFirebase(req.file, printMode);
+        const result = await processAndUploadFile(req.file, printMode);
 
         return res.status(201).json({
             message: 'File uploaded successfully',
@@ -151,15 +201,17 @@ router.post('/guest', upload.single('file'), async (req, res) => {
                 public_id: result.public_id,
                 print_mode: result.print_mode,
                 storage_path: result.storage_path,
-                original_name: req.file.originalname,
+                original_name: result.original_name,
                 format: result.format,
+                source_format: result.source_format,
+                page_count: result.page_count,
                 size: result.bytes
             }
         });
 
     } catch (err) {
         console.error('Upload error:', err);
-        res.status(500).json({ error: 'File upload failed' });
+        res.status(500).json({ error: err.message || 'File upload failed' });
     } finally {
         if (req.file && req.file.path) {
             await safeDelete(req.file.path);
@@ -178,14 +230,16 @@ router.post('/multiple', auth, upload.array('files', 5), async (req, res) => {
 
         const uploadedFiles = await Promise.all(
             req.files.map(async file => {
-                const result = await uploadToFirebase(file, printMode);
+                const result = await processAndUploadFile(file, printMode);
                 return {
                     s3_key: result.secure_url,
                     public_id: result.public_id,
                     print_mode: result.print_mode,
                     storage_path: result.storage_path,
-                    original_name: file.originalname,
+                    original_name: result.original_name,
                     format: result.format,
+                    source_format: result.source_format,
+                    page_count: result.page_count,
                     size: result.bytes
                 };
             })
@@ -198,7 +252,7 @@ router.post('/multiple', auth, upload.array('files', 5), async (req, res) => {
 
     } catch (err) {
         console.error('Upload error:', err);
-        res.status(500).json({ error: 'File upload failed' });
+        res.status(500).json({ error: err.message || 'File upload failed' });
     } finally {
         if (req.files && req.files.length > 0) {
             await Promise.all(req.files.map(f => safeDelete(f.path)));
