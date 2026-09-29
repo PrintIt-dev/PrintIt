@@ -77,6 +77,55 @@ function findBrowserExecutable() {
 }
 
 /**
+ * Checks if Microsoft Excel COM automation is available (Windows hosts)
+ */
+let isWindowsExcelCached = null;
+function checkWindowsExcelAvailable() {
+  if (process.platform !== 'win32') return Promise.resolve(false);
+  if (isWindowsExcelCached !== null) return Promise.resolve(isWindowsExcelCached);
+
+  return new Promise((resolve) => {
+    exec(
+      'powershell -NoProfile -Command "try { $e = New-Object -ComObject Excel.Application; $e.Quit(); [System.Runtime.InteropServices.Marshal]::ReleaseComObject($e) | Out-Null; Write-Output \'OK\' } catch { exit 1 }"',
+      { timeout: 8000 },
+      (err, stdout) => {
+        isWindowsExcelCached = !err && (stdout || '').includes('OK');
+        resolve(isWindowsExcelCached);
+      }
+    );
+  });
+}
+
+/**
+ * Converts Excel spreadsheet directly using native Microsoft Excel engine via COM
+ * Preserves 100% of formatting, cell colors, custom fonts, borders, charts, and page setup
+ */
+async function convertViaWindowsExcel(inputPath) {
+  const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
+  const outputPath = path.join(CONVERT_DIR, `excel_native_${uniqueSuffix}.pdf`);
+
+  const resolvedInput = path.resolve(inputPath).replace(/'/g, "''");
+  const resolvedOutput = path.resolve(outputPath).replace(/'/g, "''");
+
+  const psCommand = `$excel = New-Object -ComObject Excel.Application; $excel.Visible = $false; $excel.DisplayAlerts = $false; try { $wb = $excel.Workbooks.Open('${resolvedInput}'); $wb.ExportAsFixedFormat(0, '${resolvedOutput}'); $wb.Close($false); Write-Output 'SUCCESS' } catch { Write-Error $_; exit 1 } finally { $excel.Quit(); [System.Runtime.InteropServices.Marshal]::ReleaseComObject($excel) | Out-Null }`;
+
+  return new Promise((resolve, reject) => {
+    exec(
+      `powershell -NoProfile -ExecutionPolicy Bypass -Command "${psCommand}"`,
+      { timeout: 35000 },
+      (error, stdout, stderr) => {
+        if (error || !fs.existsSync(outputPath)) {
+          return reject(
+            new Error(`Native Excel export failed: ${stderr || error?.message || 'File not generated'}`)
+          );
+        }
+        resolve(outputPath);
+      }
+    );
+  });
+}
+
+/**
  * Checks if LibreOffice / soffice CLI is accessible on this machine
  */
 function checkLibreOfficeAvailable() {
@@ -112,7 +161,7 @@ async function convertViaLibreOffice(inputPath, originalFileName, officeCmd) {
   const cmd = `"${officeCmd}" --headless --convert-to pdf --outdir ${escapedOutDir} ${escapedInput}`;
 
   await new Promise((resolve, reject) => {
-    exec(cmd, { timeout: 30000 }, (error, stdout, stderr) => {
+    exec(cmd, { timeout: 35000 }, (error, stdout, stderr) => {
       if (error) {
         return reject(new Error(`LibreOffice conversion failed: ${stderr || error.message}`));
       }
@@ -133,7 +182,7 @@ async function convertViaLibreOffice(inputPath, originalFileName, officeCmd) {
 }
 
 /**
- * Converts Excel spreadsheets (.xlsx, .xls, .csv) to high-quality print-ready PDF using SheetJS + Headless Browser
+ * Converts Excel spreadsheets (.xlsx, .xls, .csv) to clean print-ready PDF using SheetJS + Headless Browser
  */
 async function convertExcelViaBrowser(inputPath, originalFileName) {
   if (!puppeteerInstance) {
@@ -434,6 +483,11 @@ class DocumentConverter {
   /**
    * Converts a supported document (Excel, Word, Text) into a clean vector PDF.
    *
+   * Hierarchy of Engines:
+   * 1. Native Microsoft Excel (Windows) -> 100% exact 1:1 format preservation (fills, fonts, charts, merged cells, borders)
+   * 2. Headless LibreOffice (Linux/Docker/Windows) -> 100% exact Office layout preservation
+   * 3. Standalone Browser + SheetJS -> Universal fallback without external dependencies
+   *
    * @param {string} inputPath Path to original uploaded file on local disk
    * @param {string} originalFileName Original file name provided by customer
    * @returns {Promise<{ outputPath: string, pageCount: number, size: number, isConverted: boolean, sourceFormat: string }>}
@@ -447,29 +501,41 @@ class DocumentConverter {
     console.log(`[DocumentConverter] Starting conversion for "${originalFileName}" (${ext})...`);
 
     let generatedPdfPath = null;
-    const officeCmd = await checkLibreOfficeAvailable();
 
-    // 1. If LibreOffice is available, it provides native fidelity for all Office formats
-    if (officeCmd) {
+    // 1. If on Windows and Excel format: Attempt native Microsoft Excel engine first (100% exact formatting)
+    if (EXCEL_EXTENSIONS.has(ext) && (await checkWindowsExcelAvailable())) {
       try {
-        console.log(`[DocumentConverter] Converting via LibreOffice CLI (${officeCmd})...`);
-        generatedPdfPath = await convertViaLibreOffice(inputPath, originalFileName, officeCmd);
-      } catch (loErr) {
-        console.warn(`[DocumentConverter] LibreOffice conversion failed: ${loErr.message}. Attempting fallback...`);
+        console.log(`[DocumentConverter] Using Native Microsoft Excel Engine for 1:1 original format preservation...`);
+        generatedPdfPath = await convertViaWindowsExcel(inputPath);
+      } catch (excelErr) {
+        console.warn(`[DocumentConverter] Native Excel export failed: ${excelErr.message}. Attempting fallback engine...`);
       }
     }
 
-    // 2. Standalone fallbacks if LibreOffice was not available or failed
+    // 2. If LibreOffice is available, use it (primary engine on Linux/Docker production servers)
+    if (!generatedPdfPath) {
+      const officeCmd = await checkLibreOfficeAvailable();
+      if (officeCmd) {
+        try {
+          console.log(`[DocumentConverter] Converting via LibreOffice CLI (${officeCmd})...`);
+          generatedPdfPath = await convertViaLibreOffice(inputPath, originalFileName, officeCmd);
+        } catch (loErr) {
+          console.warn(`[DocumentConverter] LibreOffice conversion failed: ${loErr.message}. Attempting fallback...`);
+        }
+      }
+    }
+
+    // 3. Standalone browser fallback if neither native Excel nor LibreOffice was available
     if (!generatedPdfPath) {
       if (EXCEL_EXTENSIONS.has(ext)) {
-        console.log(`[DocumentConverter] Converting Excel via SheetJS + Headless Browser...`);
+        console.log(`[DocumentConverter] Converting Excel via SheetJS + Headless Browser fallback...`);
         generatedPdfPath = await convertExcelViaBrowser(inputPath, originalFileName);
       } else if (ext === '.txt') {
         console.log(`[DocumentConverter] Converting Plain Text via Headless Browser...`);
         generatedPdfPath = await convertTextViaBrowser(inputPath, originalFileName);
       } else {
         throw new Error(
-          `Document format ${ext} requires LibreOffice server-side tools which are not currently installed.`
+          `Document format ${ext} requires Microsoft Office or LibreOffice server-side tools which are not currently installed.`
         );
       }
     }
