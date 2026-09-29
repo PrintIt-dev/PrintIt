@@ -158,6 +158,7 @@ app.use(express.static(publicPath, {
 
 // API Routes
 app.use('/api', routes);
+app.use('/store', require('./routes/storeRoutes'));
 app.use('/api/notifications', notificationRoutes);
 
 // Centralized error handler with correlation ID & response sanitization

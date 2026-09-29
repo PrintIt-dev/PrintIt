@@ -7,22 +7,46 @@ import 'store_models.dart';
 import 'store_cart_provider.dart';
 import 'store_cart_sheet.dart';
 
-final storeProductsProvider = FutureProvider.autoDispose.family<List<CatalogProduct>, Map<String, String>>((ref, filters) async {
+@immutable
+class StoreFilterParams {
+  final String category;
+  final String branch;
+  final String search;
+
+  const StoreFilterParams({
+    this.category = 'All',
+    this.branch = 'All',
+    this.search = '',
+  });
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is StoreFilterParams &&
+          runtimeType == other.runtimeType &&
+          category == other.category &&
+          branch == other.branch &&
+          search == other.search;
+
+  @override
+  int get hashCode => category.hashCode ^ branch.hashCode ^ search.hashCode;
+}
+
+final storeProductsProvider = FutureProvider.autoDispose.family<List<CatalogProduct>, StoreFilterParams>((ref, filters) async {
   final api = ref.read(apiProvider);
-  final queryParams = <String, String>{};
+  final queryParams = <String, dynamic>{};
 
-  if (filters['category'] != null && filters['category'] != 'All') {
-    queryParams['category'] = filters['category']!;
+  if (filters.category != 'All') {
+    queryParams['category'] = filters.category;
   }
-  if (filters['branch'] != null && filters['branch'] != 'All') {
-    queryParams['branch'] = filters['branch']!;
+  if (filters.branch != 'All') {
+    queryParams['branch'] = filters.branch;
   }
-  if (filters['search'] != null && filters['search']!.trim().isNotEmpty) {
-    queryParams['search'] = filters['search']!.trim();
+  if (filters.search.trim().isNotEmpty) {
+    queryParams['search'] = filters.search.trim();
   }
 
-  final uri = Uri(path: '/store/products', queryParameters: queryParams.isEmpty ? null : queryParams);
-  final res = await api.get(uri.toString());
+  final res = await api.get('store/products', queryParameters: queryParams.isEmpty ? null : queryParams);
 
   final List<dynamic> data = res.data is List ? res.data : (res.data['products'] ?? []);
   return data.map((json) => CatalogProduct.fromJson(json)).toList();
@@ -65,11 +89,11 @@ class _StoreHomeScreenState extends ConsumerState<StoreHomeScreen> {
     super.dispose();
   }
 
-  Map<String, String> get _currentFilters => {
-    'category': _selectedCategory,
-    'branch': _selectedBranch,
-    'search': _searchQuery,
-  };
+  StoreFilterParams get _currentFilters => StoreFilterParams(
+    category: _selectedCategory,
+    branch: _selectedBranch,
+    search: _searchQuery,
+  );
 
   @override
   Widget build(BuildContext context) {

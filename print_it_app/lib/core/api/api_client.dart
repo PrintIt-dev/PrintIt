@@ -24,8 +24,9 @@ class ApiClient {
   bool _isDiscovering = false;
 
   ApiClient() {
+    final String base = currentBaseUrl.endsWith('/') ? currentBaseUrl : '$currentBaseUrl/';
     dio = Dio(BaseOptions(
-      baseUrl: currentBaseUrl,
+      baseUrl: base,
       connectTimeout: const Duration(seconds: 45),
       receiveTimeout: const Duration(seconds: 45),
       validateStatus: (status) => status != null && status < 500,
@@ -76,7 +77,7 @@ class ApiClient {
       final savedUrl = prefs.getString('saved_server_url');
       if (savedUrl != null && savedUrl.isNotEmpty) {
         currentBaseUrl = savedUrl;
-        dio.options.baseUrl = savedUrl;
+        dio.options.baseUrl = savedUrl.endsWith('/') ? savedUrl : '$savedUrl/';
       }
     } catch (_) {}
   }
@@ -137,29 +138,38 @@ class ApiClient {
     }
 
     currentBaseUrl = formattedUrl;
-    dio.options.baseUrl = formattedUrl;
+    final String base = formattedUrl.endsWith('/') ? formattedUrl : '$formattedUrl/';
+    currentBaseUrl = formattedUrl;
+    dio.options.baseUrl = base;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('saved_server_url', formattedUrl);
-    debugPrint('Saved new API baseUrl: $formattedUrl');
+    debugPrint('Saved new API baseUrl: $base');
+  }
+
+  String _normalizePath(String path) {
+    if (path.startsWith('http://') || path.startsWith('https://')) {
+      return path;
+    }
+    return path.startsWith('/') ? path.substring(1) : path;
   }
 
   Future<Response> get(String path, {Map<String, dynamic>? queryParameters}) async {
-    return await dio.get(path, queryParameters: queryParameters);
+    return await dio.get(_normalizePath(path), queryParameters: queryParameters);
   }
 
   Future<Response> post(String path, {dynamic data}) async {
-    return await dio.post(path, data: data);
+    return await dio.post(_normalizePath(path), data: data);
   }
 
   Future<Response> patch(String path, {dynamic data}) async {
-    return await dio.patch(path, data: data);
+    return await dio.patch(_normalizePath(path), data: data);
   }
 
   Future<Response> put(String path, {dynamic data}) async {
-    return await dio.put(path, data: data);
+    return await dio.put(_normalizePath(path), data: data);
   }
 
   Future<Response> delete(String path, {dynamic data}) async {
-    return await dio.delete(path, data: data);
+    return await dio.delete(_normalizePath(path), data: data);
   }
 }

@@ -202,6 +202,19 @@ async function runCustomerTestSuite(driver, baseUrl, backendUrl = 'http://127.0.
         await takeScreenshot(driver, 'customer_04_help.png');
     });
 
+    // -------------------------------------------------------------
+    // Test 8: Store Screen Navigation
+    // -------------------------------------------------------------
+    await test('08. Customer Store Marketplace Screen Navigation', async () => {
+        await driver.get(baseUrl + '/#/store');
+        await driver.sleep(3500);
+        const url = await driver.getCurrentUrl();
+        if (!url.includes('/store')) {
+            throw new Error(`Expected URL to contain /store, got: ${url}`);
+        }
+        await takeScreenshot(driver, 'customer_05_store.png');
+    });
+
     console.log('\n================================================================');
     console.log(`CUSTOMER PORTAL SELENIUM SUMMARY: ${passed} PASSED, ${failed} FAILED`);
     console.log('================================================================\n');
