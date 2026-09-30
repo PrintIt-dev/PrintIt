@@ -84,6 +84,13 @@ async function setupOrdersAndSequencesDb() {
                 ) THEN
                     ALTER TABLE orders ADD COLUMN storage_path VARCHAR(255);
                 END IF;
+
+                IF NOT EXISTS (
+                    SELECT 1 FROM information_schema.columns 
+                    WHERE table_name = 'orders' AND column_name = 'customer_phone'
+                ) THEN
+                    ALTER TABLE orders ADD COLUMN customer_phone VARCHAR(50);
+                END IF;
             END $$;
         `);
 

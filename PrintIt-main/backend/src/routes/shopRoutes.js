@@ -4,6 +4,7 @@ const pool = require('../config/db');
 const auth = require('../middleware/auth');
 const shopCheck = require('../middleware/shopCheck');
 const { getMessaging } = require('../config/firebase');
+const { deleteOrderFilesImmediately } = require('../utils/firebaseCleanup');
 
 // All routes in this router require authentication and shop verification
 router.use(auth);
@@ -21,7 +22,7 @@ router.get('/orders', async (req, res) => {
         const offset = (page - 1) * limit;
 
         const result = await pool.query(
-            `SELECT o.*, u.phone as customer_phone 
+            `SELECT o.*, COALESCE(o.customer_phone, u.phone) as customer_phone 
              FROM orders o 
              LEFT JOIN users u ON o.customer_id = u.user_id 
              WHERE o.shop_id = $1 
@@ -58,7 +59,7 @@ router.get('/queue', async (req, res) => {
         const offset = (page - 1) * limit;
 
         const result = await pool.query(
-            `SELECT o.*, u.phone as customer_phone 
+            `SELECT o.*, COALESCE(o.customer_phone, u.phone) as customer_phone 
              FROM orders o 
              LEFT JOIN users u ON o.customer_id = u.user_id 
              WHERE o.shop_id = $1 AND o.status = 'queued' 
@@ -133,7 +134,7 @@ router.get('/orders/:id', async (req, res) => {
 
     try {
         const result = await pool.query(
-            'SELECT order_id, customer_id, shop_id, files, print_options, status, queue_position, amount_total, payment_status, created_at, updated_at, completed_at, files_deleted, cancelled_at, payment_id, pickup_qr, print_instructions, refund_status, refund_id FROM orders WHERE order_id = $1',
+            'SELECT order_id, customer_id, shop_id, files, print_options, status, queue_position, amount_total, payment_status, created_at, updated_at, completed_at, files_deleted, cancelled_at, payment_id, pickup_qr, print_instructions, refund_status, refund_id, print_mode, files_deleted_at, deletion_status, secure_expires_at FROM orders WHERE order_id = $1',
             [id]
         );
 
@@ -185,14 +186,12 @@ router.get('/orders/:id/files', async (req, res) => {
 
         const fileList = files.map((file, index) => {
             if (!file) return null;
-            let downloadUrl = file.s3_key || file.url;
-            
+            const fileInfo = (file.file_info && typeof file.file_info === 'object') ? file.file_info : file;
             return {
                 index,
-                original_url: file.s3_key || file.url,
-                download_url: downloadUrl,
-                page_count: file.page_count || null,
-                original_name: file.original_name
+                page_count: fileInfo.pages || fileInfo.page_count || null,
+                original_name: fileInfo.original_name || fileInfo.name || 'document.pdf',
+                preview_url: `/api/shop/orders/${id}/files/${index}/proxy`
             };
         }).filter(f => f !== null);
 
@@ -206,59 +205,15 @@ router.get('/orders/:id/files', async (req, res) => {
 
 /**
  * @route   GET /api/shop/orders/:id/files/:index/download
- * @desc    Get order file and redirect to forced download URL
+ * @desc    PROHIBITED: Direct file downloads are disabled across all orders to protect customer privacy
  * @access  Private (Shop Owner Only)
  */
 router.get('/orders/:id/files/:index/download', async (req, res) => {
-    const { id, index } = req.params;
-    const fileIndex = parseInt(index, 10);
-
-    if (isNaN(fileIndex) || fileIndex < 0) {
-        return res.status(400).json({ error: 'Invalid file index' });
-    }
-
-    try {
-        const result = await pool.query(
-            'SELECT shop_id, files FROM orders WHERE order_id = $1',
-            [id]
-        );
-
-        if (result.rows.length === 0) {
-            return res.status(404).json({ error: 'Order not found' });
-        }
-
-        const order = result.rows[0];
-
-        if (order.shop_id !== req.shop_id) {
-            return res.status(403).json({ error: 'Access denied. This order does not belong to your shop.' });
-        }
-
-        let files = order.files;
-        if (typeof files === 'string') files = JSON.parse(files);
-        files = files || [];
-
-        const rawFile = files[fileIndex];
-        if (!rawFile) {
-            return res.status(404).json({ error: 'File not found at this index' });
-        }
-
-        // Normalize: Flutter wraps file info in a nested 'file_info' object
-        const fileInfo = (rawFile.file_info && typeof rawFile.file_info === 'object')
-            ? rawFile.file_info
-            : rawFile;
-
-        const downloadUrl = fileInfo.s3_key || fileInfo.url;
-        if (!downloadUrl) {
-            return res.status(404).json({ error: 'File URL not found' });
-        }
-
-        return res.redirect(downloadUrl);
-
-    } catch (err) {
-        console.error('Error generating download redirect:', err);
-        res.status(500).json({ error: 'Failed to generate download url' });
-    }
+    return res.status(403).json({
+        error: 'Direct file downloads are permanently disabled across all orders to protect customer privacy and prevent unauthorized document retention.'
+    });
 });
+
 
 /**
  * @route   GET /api/shop/orders/:id/files/:file_index/download-url
@@ -276,7 +231,7 @@ router.get('/orders/:id/files/:file_index/download-url', async (req, res) => {
 
     try {
         const result = await pool.query(
-            'SELECT shop_id, files FROM orders WHERE order_id = $1',
+            'SELECT shop_id, files, files_deleted, print_mode FROM orders WHERE order_id = $1',
             [id]
         );
 
@@ -288,6 +243,10 @@ router.get('/orders/:id/files/:file_index/download-url', async (req, res) => {
 
         if (order.shop_id !== req.shop_id) {
             return res.status(403).json({ error: 'Access denied. This order does not belong to your shop.' });
+        }
+
+        if (order.files_deleted) {
+            return res.status(410).json({ error: 'This document has already been permanently deleted per the customer\'s Secure Printing retention policy.' });
         }
 
         let files = order.files || [];
@@ -313,7 +272,7 @@ router.get('/orders/:id/files/:file_index/download-url', async (req, res) => {
         const originalName = files.length > 1 ? `${shortId}_${index + 1}${ext}` : `${shortId}${ext}`;
 
         if (!rawUrl) {
-            console.error('[download-url] No URL found. fileInfo:', JSON.stringify(fileInfo));
+            console.error('[download-url] No URL found for file at specified index');
             return res.status(404).json({ error: 'File URL not found' });
         }
 
@@ -326,14 +285,15 @@ router.get('/orders/:id/files/:file_index/download-url', async (req, res) => {
                 const { getStorage } = require('../config/firebase');
                 const bucket = getStorage().bucket();
                 const fileRef = bucket.file(publicId);
+                const isSecure = order.print_mode === 'secure';
+                const ttlMs = isSecure ? (15 * 60 * 1000) : (30 * 60 * 1000); // 15-min TTL for secure mode
                 const [signedUrl] = await fileRef.getSignedUrl({
                     action: 'read',
-                    expires: Date.now() + 30 * 60 * 1000, // 30 minutes
+                    expires: Date.now() + ttlMs,
                 });
                 downloadUrl = signedUrl;
-                console.log(`[download-url] Generated signed URL for ${publicId}`);
             } catch (signErr) {
-                console.warn('[download-url] Signed URL failed, using raw URL:', signErr.message);
+                console.warn('[download-url] Signed URL generation failed, falling back to storage URL');
                 // Fall back to the raw Firebase URL (works if bucket is public)
             }
         }
@@ -341,51 +301,22 @@ router.get('/orders/:id/files/:file_index/download-url', async (req, res) => {
         return res.json({ download_url: downloadUrl, original_name: originalName });
 
     } catch (err) {
-        console.error('Error generating download url:', err);
+        console.error('Error generating download url:', err.message);
         res.status(500).json({ error: 'Failed to generate download url' });
     }
 });
 
 /**
  * @route   GET /api/shop/orders/:id/files/download-all
- * @desc    Get download URLs for all files in an order
+ * @desc    PROHIBITED: Bulk file downloads are disabled across all orders to protect customer privacy
  * @access  Private (Shop Owner Only)
  */
 router.get('/orders/:id/files/download-all', async (req, res) => {
-    const { id } = req.params;
-
-    try {
-        const result = await pool.query(
-            'SELECT shop_id, files FROM orders WHERE order_id = $1',
-            [id]
-        );
-
-        if (result.rows.length === 0) {
-            return res.status(404).json({ error: 'Order not found' });
-        }
-
-        const order = result.rows[0];
-
-        // Verify ownership
-        if (order.shop_id !== req.shop_id) {
-            return res.status(403).json({ error: 'Access denied. This order does not belong to your shop.' });
-        }
-
-        const files = order.files || [];
-        
-        const urls = files.map(file => {
-            if (!file || !file.s3_key) return null;
-            let downloadUrl = file.s3_key;
-            return downloadUrl;
-        }).filter(url => url !== null);
-
-        return res.json({ urls });
-
-    } catch (err) {
-        console.error('Error generating download urls:', err);
-        res.status(500).json({ error: 'Failed to generate download urls' });
-    }
+    return res.status(403).json({
+        error: 'Bulk file downloads are permanently disabled across all orders to protect customer privacy and prevent unauthorized document retention.'
+    });
 });
+
 
 /**
  * @route   GET /api/shop/orders/:id/files/:file_index/proxy
@@ -403,11 +334,20 @@ router.get('/orders/:id/files/:file_index/proxy', async (req, res) => {
     }
 
     try {
-        const result = await pool.query('SELECT shop_id, files FROM orders WHERE order_id = $1', [id]);
+        const result = await pool.query('SELECT shop_id, files, files_deleted, print_mode FROM orders WHERE order_id = $1', [id]);
         if (result.rows.length === 0) return res.status(404).json({ error: 'Order not found' });
 
         const order = result.rows[0];
         if (order.shop_id !== req.shop_id) return res.status(403).json({ error: 'Access denied' });
+
+        if (order.files_deleted) {
+            return res.status(410).json({ error: 'This document has already been permanently deleted per the customer\'s Secure Printing retention policy.' });
+        }
+
+        // Privacy Enforcement: Block explicit file download requests across all orders
+        if (req.query.download === 'true' || req.query.dl === '1') {
+            return res.status(403).json({ error: 'Direct file downloads are disabled across all orders to protect customer privacy.' });
+        }
 
         let files = order.files;
         if (typeof files === 'string') files = JSON.parse(files);
@@ -415,7 +355,7 @@ router.get('/orders/:id/files/:file_index/proxy', async (req, res) => {
 
         const rawFile = files[fileIdx];
         if (!rawFile) {
-            console.error(`[proxy] No entry at index ${fileIdx}. files:`, JSON.stringify(files));
+            console.error(`[proxy] No entry at file index ${fileIdx}`);
             return res.status(404).json({ error: 'File not found at this index' });
         }
 
@@ -435,11 +375,18 @@ router.get('/orders/:id/files/:file_index/proxy', async (req, res) => {
         const originalName = files.length > 1 ? `${shortId}_${fileIdx + 1}${ext}` : `${shortId}${ext}`;
 
         if (!fileUrl) {
-            console.error(`[proxy] No URL in fileInfo:`, JSON.stringify(fileInfo));
+            console.error(`[proxy] No file URL resolved for index ${fileIdx}`);
             return res.status(404).json({ error: 'File URL not found' });
         }
 
-        console.log(`[proxy] Serving file index ${fileIdx}: ${fileUrl}`);
+        const applySecurityHeaders = (responseStream) => {
+            const contentType = responseStream.headers['content-type'] || 'application/octet-stream';
+            res.setHeader('Content-Type', contentType);
+            res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(originalName)}"`);
+            res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+            res.setHeader('Pragma', 'no-cache');
+            res.setHeader('Expires', '0');
+        };
 
         // ---------------------------------------------------------------
         // Strategy: Try Firebase Admin signed URL first (works for private
@@ -454,26 +401,24 @@ router.get('/orders/:id/files/:file_index/proxy', async (req, res) => {
                 const { getStorage } = require('../config/firebase');
                 const bucket = getStorage().bucket();
                 const fileRef = bucket.file(filePublicId);
+                const ttlMs = isSecure ? (15 * 60 * 1000) : (30 * 60 * 1000);
 
                 const [signedUrl] = await fileRef.getSignedUrl({
                     action: 'read',
-                    expires: Date.now() + 15 * 60 * 1000, // 15 minutes
+                    expires: Date.now() + ttlMs,
                 });
 
-                console.log('[proxy] Using Firebase signed URL');
-                // Proxy via signed URL so Content-Disposition can be set
+                // Proxy via signed URL
                 const https = require('https');
                 https.get(signedUrl, (response) => {
                     if (response.statusCode !== 200) {
-                        console.error('[proxy] Firebase signed URL returned', response.statusCode);
+                        console.error('[proxy] Firebase signed URL returned HTTP error status:', response.statusCode);
                         return res.status(response.statusCode).send('Failed to fetch file');
                     }
-                    const contentType = response.headers['content-type'] || 'application/octet-stream';
-                    res.setHeader('Content-Type', contentType);
-                    res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(originalName)}"`);
+                    applySecurityHeaders(response);
                     response.pipe(res);
                 }).on('error', (err) => {
-                    console.error('[proxy] Signed URL fetch error:', err);
+                    console.error('[proxy] Signed URL fetch error:', err.message);
                     res.status(500).json({ error: 'Error proxying signed file' });
                 });
                 return;
@@ -490,15 +435,13 @@ router.get('/orders/:id/files/:file_index/proxy', async (req, res) => {
 
         httpClient.get(fileUrl, (response) => {
             if (response.statusCode !== 200) {
-                console.error('[proxy] Direct fetch returned', response.statusCode, 'for URL:', fileUrl);
+                console.error('[proxy] Direct fetch returned non-200 HTTP status:', response.statusCode);
                 return res.status(response.statusCode).send('Failed to fetch file from storage');
             }
-            const contentType = response.headers['content-type'] || 'application/octet-stream';
-            res.setHeader('Content-Type', contentType);
-            res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(originalName)}"`);
+            applySecurityHeaders(response);
             response.pipe(res);
         }).on('error', (err) => {
-            console.error('[proxy] Direct proxy error:', err);
+            console.error('[proxy] Direct proxy error:', err.message);
             res.status(500).json({ error: 'Error proxying file' });
         });
 
@@ -516,7 +459,7 @@ router.get('/orders/:id/files/:file_index/proxy', async (req, res) => {
  */
 router.patch('/orders/:id/status', async (req, res) => {
     const { id } = req.params;
-    const { status } = req.body;
+    const { status, print_options } = req.body;
 
     // Validate status value
     const validStatuses = ['queued', 'processing', 'ready', 'collected', 'cancelled'];
@@ -530,7 +473,7 @@ router.patch('/orders/:id/status', async (req, res) => {
     try {
         // Fetch order to verify ownership
         const orderResult = await pool.query(
-            'SELECT shop_id, customer_id FROM orders WHERE order_id = $1',
+            'SELECT shop_id, customer_id, files FROM orders WHERE order_id = $1',
             [id]
         );
 
@@ -545,15 +488,45 @@ router.patch('/orders/:id/status', async (req, res) => {
             return res.status(403).json({ error: 'Access denied. This order does not belong to your shop.' });
         }
 
-        // Perform status update
-        const updateResult = await pool.query(
-            `UPDATE orders 
-             SET status = $1::text::order_status,
-                 completed_at = CASE WHEN $1::text = 'collected' OR $1::text = 'cancelled' THEN NOW() ELSE completed_at END
-             WHERE order_id = $2 
-             RETURNING *`,
-            [status, id]
-        );
+        // Perform status update (with updated print_options if verified/customized by shopkeeper)
+        let querySql;
+        let queryParams;
+
+        if (print_options && typeof print_options === 'object') {
+            let files = order.files;
+            if (typeof files === 'string') {
+                try { files = JSON.parse(files); } catch (e) { files = []; }
+            }
+            if (Array.isArray(files) && files.length > 0) {
+                const target = files[0].file_info ? files[0] : files[0];
+                target.print_options = { ...(target.print_options || {}), ...print_options };
+            }
+
+            querySql = `UPDATE orders 
+                 SET status = $1::text::order_status,
+                     print_options = jsonb_strip_nulls(COALESCE(print_options, '{}'::jsonb) || $3::jsonb),
+                     files = $4::jsonb,
+                     completed_at = CASE WHEN $1::text = 'collected' OR $1::text = 'cancelled' THEN NOW() ELSE completed_at END,
+                     secure_expires_at = CASE WHEN $1::text = 'cancelled' AND print_mode = 'secure' THEN NOW() + INTERVAL '15 minutes' ELSE secure_expires_at END
+                 WHERE order_id = $2 
+                 RETURNING *`;
+            queryParams = [status, id, JSON.stringify(print_options), JSON.stringify(files)];
+        } else {
+            querySql = `UPDATE orders 
+                 SET status = $1::text::order_status,
+                     completed_at = CASE WHEN $1::text = 'collected' OR $1::text = 'cancelled' THEN NOW() ELSE completed_at END,
+                     secure_expires_at = CASE WHEN $1::text = 'cancelled' AND print_mode = 'secure' THEN NOW() + INTERVAL '15 minutes' ELSE secure_expires_at END
+                 WHERE order_id = $2 
+                 RETURNING *`;
+            queryParams = [status, id];
+        }
+
+        const updateResult = await pool.query(querySql, queryParams);
+
+        // Immediate deletion on print completion for Secure Printing mode
+        if (status === 'collected') {
+            deleteOrderFilesImmediately(id);
+        }
 
         // Notifications and FCM logic
         if (updateResult.rows[0].customer_id) {
@@ -736,7 +709,6 @@ async function triggerNotification(customerId, title, body, orderId) {
 
         const user = result.rows[0];
         if (!user || !user.fcm_token) {
-            console.log(`ℹ️ No FCM token for customer ${customerId} — skipping push notification.`);
             return;
         }
 
@@ -766,8 +738,8 @@ async function triggerNotification(customerId, title, body, orderId) {
             },
         };
 
-        const response = await getMessaging().send(message);
-        console.log(`✅ Push notification sent for order ${orderId}:`, response);
+        await getMessaging().send(message);
+        console.log(`✅ Push notification dispatched for order ${orderId}`);
     } catch (err) {
         // Log but never throw — notification failure must not break the status update
         console.error(`❌ Push notification failed for order ${orderId}:`, err.message);
@@ -1166,4 +1138,392 @@ router.patch('/product-orders/:id/collect', async (req, res) => {
     }
 });
 
+
+/**
+ * @route   GET /api/shop/agent
+ * @desc    Get connected print agent device and pairing status
+ * @access  Private (Shop Owner Only)
+ */
+router.get('/agent', async (req, res) => {
+    try {
+        const result = await pool.query(
+            `SELECT id, device_name, pairing_code, pairing_code_expires_at, 
+                    selected_printer, selected_printer_bw, selected_printer_color, 
+                    available_printers, agent_version, status, last_seen_at, updated_at
+             FROM agent_devices 
+             WHERE shop_id = $1 
+             ORDER BY updated_at DESC LIMIT 1`,
+            [req.shop_id]
+        );
+        res.json({ device: result.rows[0] || null });
+    } catch (err) {
+        console.error('Error fetching agent device:', err);
+        res.status(500).json({ error: 'Failed to fetch agent device' });
+    }
+});
+
+/**
+ * @route   POST /api/shop/agent/pairing-code
+ * @desc    Generate a new 6-character pairing code for the shop
+ * @access  Private (Shop Owner Only)
+ */
+router.post('/agent/pairing-code', async (req, res) => {
+    const { device_name = 'Counter-Station' } = req.body;
+    try {
+        const codeResult = await pool.query(
+            'SELECT generate_pairing_code($1, $2) AS code',
+            [req.shop_id, device_name]
+        );
+        const code = codeResult.rows[0]?.code;
+        res.json({
+            pairing_code: code,
+            expires_in_minutes: 15,
+            message: 'Pairing code generated successfully'
+        });
+    } catch (err) {
+        console.error('Error generating pairing code:', err);
+        res.status(500).json({ error: 'Failed to generate pairing code' });
+    }
+});
+
+/**
+ * @route   PUT /api/shop/agent/printer
+ * @desc    Update selected default B&W, Color, fallback, and available printers for this shop's agent
+ * @access  Private (Shop Owner Only)
+ */
+router.put('/agent/printer', async (req, res) => {
+    const { selected_printer, selected_printer_bw, selected_printer_color, available_printers } = req.body;
+    try {
+        const result = await pool.query(
+            `UPDATE agent_devices 
+             SET selected_printer = COALESCE($1, selected_printer),
+                 selected_printer_bw = COALESCE($2, selected_printer_bw),
+                 selected_printer_color = COALESCE($3, selected_printer_color),
+                 available_printers = COALESCE($4::jsonb, available_printers),
+                 updated_at = NOW()
+             WHERE shop_id = $5
+             RETURNING id, device_name, selected_printer, selected_printer_bw, selected_printer_color, available_printers, status`,
+            [
+                selected_printer !== undefined ? selected_printer : null, 
+                selected_printer_bw !== undefined ? selected_printer_bw : null, 
+                selected_printer_color !== undefined ? selected_printer_color : null, 
+                available_printers ? JSON.stringify(available_printers) : null, 
+                req.shop_id
+            ]
+        );
+        res.json({ success: true, device: result.rows[0] || null });
+    } catch (err) {
+        console.error('Error updating agent printer:', err);
+        res.status(500).json({ error: 'Failed to update printer settings' });
+    }
+});
+
+/**
+ * @route   POST /api/shop/orders/:id/dispatch-to-agent
+ * @desc    Queue a (re)print job to the shop's linked desktop print agent.
+ *          Creates an agent_print_jobs record the agent polls for silent printing.
+ *          Supports single file, all files, or multi-file combined grid layout (e.g. 4 photos on 1 sheet).
+ * @access  Private (Shop Owner Only)
+ */
+/**
+ * @route   POST /api/shop/agent/test-print
+ * @desc    Trigger a diagnostic hardware test print page on the shop's linked agent
+ * @access  Private (Shop Owner Only)
+ */
+router.post('/agent/test-print', async (req, res) => {
+    const { printer_name } = req.body;
+    try {
+        const deviceRes = await pool.query(
+            "SELECT id, status, selected_printer, selected_printer_bw, selected_printer_color FROM agent_devices WHERE shop_id = $1 ORDER BY updated_at DESC LIMIT 1",
+            [req.shop_id]
+        );
+        const device = deviceRes.rows[0];
+        if (!device) {
+            return res.status(400).json({ error: 'No print agent is paired with this shop. Please pair your PrintIt Agent desktop app first.' });
+        }
+        if (!['ONLINE', 'READY', 'PRINTING'].includes(device.status)) {
+            return res.status(503).json({ error: `Print agent is currently ${device.status || 'OFFLINE'}. Please start the PrintIt Agent on your shop PC.` });
+        }
+
+        const targetPrinter = printer_name || device.selected_printer || device.selected_printer_bw || null;
+        const testJobId = 'TEST-' + Math.random().toString(36).substring(2, 8).toUpperCase();
+
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS agent_print_jobs (
+                id           SERIAL PRIMARY KEY,
+                shop_id      TEXT NOT NULL,
+                order_id     TEXT NOT NULL,
+                file_index   INT NOT NULL DEFAULT 0,
+                storage_path TEXT,
+                storage_paths JSONB,
+                print_options JSONB,
+                status       TEXT NOT NULL DEFAULT 'pending',
+                created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                acked_at     TIMESTAMPTZ
+            )
+        `);
+
+        const jobRes = await pool.query(
+            `INSERT INTO agent_print_jobs (shop_id, order_id, file_index, storage_path, print_options, status)
+             VALUES ($1, $2, 0, 'diagnostic://test_page.pdf', $3::jsonb, 'pending')
+             RETURNING id`,
+            [
+                req.shop_id,
+                testJobId,
+                JSON.stringify({
+                    is_test_page: true,
+                    printer_name: targetPrinter,
+                    copies: 1
+                })
+            ]
+        );
+
+        return res.json({
+            success: true,
+            job_id: jobRes.rows[0].id,
+            target_printer: targetPrinter || 'Default System Spooler',
+            message: `Diagnostic test page queued for silent printing on "${targetPrinter || 'Default System Spooler'}"`
+        });
+    } catch (err) {
+        console.error('Error queuing test print:', err);
+        res.status(500).json({ error: 'Failed to queue diagnostic test print: ' + err.message });
+    }
+});
+
+router.post('/orders/:id/dispatch-to-agent', async (req, res) => {
+    const { id } = req.params;
+    const { file_index = 0, multi_file_grid = false, print_options: reqOptions } = req.body;
+
+    try {
+        // Ensure the agent_print_jobs table and storage_paths column exist
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS agent_print_jobs (
+                id           SERIAL PRIMARY KEY,
+                shop_id      TEXT NOT NULL,
+                order_id     TEXT NOT NULL,
+                file_index   INT NOT NULL DEFAULT 0,
+                storage_path TEXT,
+                storage_paths JSONB,
+                print_options JSONB,
+                status       TEXT NOT NULL DEFAULT 'pending',
+                created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                acked_at     TIMESTAMPTZ
+            )
+        `);
+        await pool.query(`ALTER TABLE agent_print_jobs ADD COLUMN IF NOT EXISTS storage_paths JSONB;`);
+
+        // Verify the order belongs to this shop and files aren't deleted
+        const orderRes = await pool.query(
+            'SELECT shop_id, files, files_deleted, print_options FROM orders WHERE order_id = $1',
+            [id]
+        );
+        if (orderRes.rows.length === 0) {
+            return res.status(404).json({ error: 'Order not found' });
+        }
+        const order = orderRes.rows[0];
+        if (order.shop_id !== req.shop_id) {
+            return res.status(403).json({ error: 'Access denied' });
+        }
+        if (order.files_deleted) {
+            return res.status(410).json({ error: 'Document files have already been permanently erased.' });
+        }
+
+        let files = order.files || [];
+        if (typeof files === 'string') files = JSON.parse(files);
+        if (!Array.isArray(files) || files.length === 0) {
+            return res.status(400).json({ error: 'No files found in order' });
+        }
+
+        // Helper to extract storage path
+        const getStoragePath = (rawFile) => {
+            const fileInfo = (rawFile && rawFile.file_info && typeof rawFile.file_info === 'object')
+                ? rawFile.file_info
+                : rawFile;
+            return fileInfo && (fileInfo.public_id || fileInfo.s3_key || fileInfo.url || null);
+        };
+
+        // Check an agent device is linked and online for this shop
+        const deviceRes = await pool.query(
+            "SELECT id, status FROM agent_devices WHERE shop_id = $1 ORDER BY updated_at DESC LIMIT 1",
+            [req.shop_id]
+        );
+        const device = deviceRes.rows[0];
+        if (!device) {
+            return res.status(400).json({ error: 'No print agent is paired with this shop. Set one up in the Print Agent settings.' });
+        }
+        if (!['ONLINE', 'READY', 'PRINTING'].includes(device.status)) {
+            return res.status(503).json({ error: 'Print agent is offline. Make sure the PrintIt Agent app is running on your shop PC.' });
+        }
+
+        const effectiveOptions = { ...(order.print_options || {}), ...(reqOptions || {}) };
+
+        // CASE 1: Multi-file Grid (e.g. 4 photos or 4 separate files combined onto 1 sheet)
+        if (multi_file_grid || effectiveOptions.multi_file_grid) {
+            const allPaths = files.map(getStoragePath).filter(Boolean);
+            const gridOpts = {
+                ...effectiveOptions,
+                multi_file_grid: true,
+                pages_per_paper: effectiveOptions.pages_per_paper || files.length
+            };
+            const jobRes = await pool.query(
+                `INSERT INTO agent_print_jobs (shop_id, order_id, file_index, storage_path, storage_paths, print_options, status)
+                 VALUES ($1, $2, 0, $3, $4::jsonb, $5, 'pending')
+                 RETURNING id`,
+                [req.shop_id, id, allPaths[0] || null, JSON.stringify(allPaths), gridOpts]
+            );
+            return res.json({ 
+                success: true, 
+                job_id: jobRes.rows[0].id, 
+                message: `Multi-file grid print job queued (${allPaths.length} files combined onto sheet)` 
+            });
+        }
+
+        // CASE 2: Dispatch all files individually
+        if (file_index === 'all') {
+            const queuedIds = [];
+            for (let idx = 0; idx < files.length; idx++) {
+                const sPath = getStoragePath(files[idx]);
+                const fileOpts = files[idx]?.print_options || effectiveOptions;
+                const jobRes = await pool.query(
+                    `INSERT INTO agent_print_jobs (shop_id, order_id, file_index, storage_path, print_options, status)
+                     VALUES ($1, $2, $3, $4, $5, 'pending')
+                     RETURNING id`,
+                    [req.shop_id, id, idx, sPath, fileOpts]
+                );
+                queuedIds.push(jobRes.rows[0].id);
+            }
+            return res.json({ 
+                success: true, 
+                job_ids: queuedIds, 
+                message: `All ${files.length} document file(s) dispatched to agent` 
+            });
+        }
+
+        // CASE 3: Dispatch single specific file index
+        const idx = parseInt(file_index, 10);
+        if (isNaN(idx) || idx >= files.length) {
+            return res.status(404).json({ error: 'File index out of range' });
+        }
+        const sPath = getStoragePath(files[idx]);
+        const jobRes = await pool.query(
+            `INSERT INTO agent_print_jobs (shop_id, order_id, file_index, storage_path, print_options, status)
+             VALUES ($1, $2, $3, $4, $5, 'pending')
+             RETURNING id`,
+            [req.shop_id, id, idx, sPath, effectiveOptions]
+        );
+
+        console.log(`[Agent Dispatch] Queued print job #${jobRes.rows[0].id} for order ${id}, file index ${idx}`);
+        return res.json({ success: true, job_id: jobRes.rows[0].id, message: 'Print job dispatched to agent' });
+
+    } catch (err) {
+        console.error('[Agent Dispatch] Error:', err.message);
+        res.status(500).json({ error: 'Failed to dispatch print job to agent' });
+    }
+});
+
+/**
+ * @route   POST /api/shop/orders/walk-in
+ * @desc    Create a counter walk-in print order and immediately dispatch to agent
+ * @access  Private (Shop Owner Only)
+ */
+router.post('/orders/walk-in', async (req, res) => {
+    const { files, print_options, customer_phone, amount_total } = req.body;
+    try {
+        if (!files || !Array.isArray(files) || files.length === 0) {
+            return res.status(400).json({ error: 'At least one file is required for a print job.' });
+        }
+
+        const { generateOrderId } = require('../utils/orderIdGenerator');
+        const orderId = await generateOrderId(pool, 'express');
+
+        const shopRes = await pool.query('SELECT owner_id FROM shops WHERE shop_id = $1', [req.shop_id]);
+        const ownerId = shopRes.rows[0]?.owner_id || req.user_id;
+
+        const effectiveOptions = { ...(print_options || {}), customer_phone: customer_phone || null };
+        const totalAmount = amount_total ? parseFloat(amount_total) : 0;
+
+        const orderInsert = await pool.query(
+            `INSERT INTO orders (
+                order_id, customer_id, shop_id, files, print_options, customer_phone,
+                amount_total, payment_status, status, created_at, updated_at
+             ) VALUES (
+                $1, $2, $3, $4::jsonb, $5::jsonb, $6,
+                $7, 'captured', 'processing', NOW(), NOW()
+             ) RETURNING *`,
+            [
+                orderId,
+                ownerId,
+                req.shop_id,
+                JSON.stringify(files),
+                JSON.stringify(effectiveOptions),
+                customer_phone || null,
+                totalAmount
+            ]
+        );
+
+        // Queue directly to agent_print_jobs so the agent prints it immediately
+        const deviceRes = await pool.query(
+            "SELECT id, status FROM agent_devices WHERE shop_id = $1 ORDER BY updated_at DESC LIMIT 1",
+            [req.shop_id]
+        );
+        const device = deviceRes.rows[0];
+        let agentDispatched = false;
+
+        if (device && ['ONLINE', 'READY', 'PRINTING'].includes(device.status)) {
+            const getStoragePath = (rawFile) => {
+                const fileInfo = (rawFile && rawFile.file_info && typeof rawFile.file_info === 'object')
+                    ? rawFile.file_info
+                    : rawFile;
+                return fileInfo && (fileInfo.public_id || fileInfo.s3_key || fileInfo.url || null);
+            };
+
+            await pool.query(`
+                CREATE TABLE IF NOT EXISTS agent_print_jobs (
+                    id           SERIAL PRIMARY KEY,
+                    shop_id      TEXT NOT NULL,
+                    order_id     TEXT NOT NULL,
+                    file_index   INT NOT NULL DEFAULT 0,
+                    storage_path TEXT,
+                    storage_paths JSONB,
+                    print_options JSONB,
+                    status       TEXT NOT NULL DEFAULT 'pending',
+                    created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                    acked_at     TIMESTAMPTZ
+                )
+            `);
+
+            if (effectiveOptions.multi_file_grid && files.length > 1) {
+                const allPaths = files.map(getStoragePath).filter(Boolean);
+                await pool.query(
+                    `INSERT INTO agent_print_jobs (shop_id, order_id, file_index, storage_path, storage_paths, print_options, status)
+                     VALUES ($1, $2, 0, $3, $4::jsonb, $5, 'pending')`,
+                    [req.shop_id, orderId, allPaths[0] || null, JSON.stringify(allPaths), effectiveOptions]
+                );
+            } else {
+                for (let idx = 0; idx < files.length; idx++) {
+                    const sPath = getStoragePath(files[idx]);
+                    const fileOpts = files[idx]?.print_options || effectiveOptions;
+                    await pool.query(
+                        `INSERT INTO agent_print_jobs (shop_id, order_id, file_index, storage_path, print_options, status)
+                         VALUES ($1, $2, $3, $4, $5, 'pending')`,
+                        [req.shop_id, orderId, idx, sPath, fileOpts]
+                    );
+                }
+            }
+            agentDispatched = true;
+        }
+
+        res.status(201).json({
+            message: 'Walk-in print order created successfully',
+            order: orderInsert.rows[0],
+            agent_dispatched: agentDispatched
+        });
+
+    } catch (err) {
+        console.error('Error creating walk-in order:', err);
+        res.status(500).json({ error: 'Failed to create walk-in order: ' + err.message });
+    }
+});
+
 module.exports = router;
+

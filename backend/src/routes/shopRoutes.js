@@ -22,7 +22,7 @@ router.get('/orders', async (req, res) => {
         const offset = (page - 1) * limit;
 
         const result = await pool.query(
-            `SELECT o.*, u.phone as customer_phone 
+            `SELECT o.*, COALESCE(o.customer_phone, u.phone) as customer_phone 
              FROM orders o 
              LEFT JOIN users u ON o.customer_id = u.user_id 
              WHERE o.shop_id = $1 
@@ -59,7 +59,7 @@ router.get('/queue', async (req, res) => {
         const offset = (page - 1) * limit;
 
         const result = await pool.query(
-            `SELECT o.*, u.phone as customer_phone 
+            `SELECT o.*, COALESCE(o.customer_phone, u.phone) as customer_phone 
              FROM orders o 
              LEFT JOIN users u ON o.customer_id = u.user_id 
              WHERE o.shop_id = $1 AND o.status = 'queued' 
@@ -1439,7 +1439,7 @@ router.post('/orders/walk-in', async (req, res) => {
         const shopRes = await pool.query('SELECT owner_id FROM shops WHERE shop_id = $1', [req.shop_id]);
         const ownerId = shopRes.rows[0]?.owner_id || req.user_id;
 
-        const effectiveOptions = print_options || {};
+        const effectiveOptions = { ...(print_options || {}), customer_phone: customer_phone || null };
         const totalAmount = amount_total ? parseFloat(amount_total) : 0;
 
         const orderInsert = await pool.query(
