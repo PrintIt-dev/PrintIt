@@ -1,6 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import api from '../../core/api';
+import OrderDetailModal from '../../components/OrderDetailModal';
+import PrintReviewModal from '../../components/PrintReviewModal';
+import NewPrintJobModal from '../../components/NewPrintJobModal';
 
 const Orders = () => {
   const { searchQuery } = useOutletContext() || { searchQuery: '' };
@@ -20,6 +23,11 @@ const Orders = () => {
   const [enteredPickupCode, setEnteredPickupCode] = useState('');
   const [verificationError, setVerificationError] = useState('');
   const [isVerifying, setIsVerifying] = useState(false);
+
+  // Print modals state
+  const [selectedPrintOrder, setSelectedPrintOrder] = useState(null);
+  const [reviewOrder, setReviewOrder] = useState(null);
+  const [showNewJobModal, setShowNewJobModal] = useState(false);
 
   useEffect(() => {
     if (activeTab === 'print') {
@@ -54,6 +62,73 @@ const Orders = () => {
     }
   };
 
+  const handlePrint = async (orderId, fileIndex = null, forceMultiGrid = false) => {
+    try {
+      const order = printOrders.find(o => o.order_id === orderId || o.id === orderId);
+      let isMultiGrid = Boolean(forceMultiGrid);
+      let hasMultipleFiles = false;
+      if (order) {
+        let opts = {};
+        try { opts = typeof order.print_options === 'string' ? JSON.parse(order.print_options) : (order.print_options || {}); } catch(e) {}
+        if (!forceMultiGrid && opts.multi_file_grid === true) {
+          isMultiGrid = true;
+        }
+        let files = order.files;
+        if (typeof files === 'string') {
+          try { files = JSON.parse(files); } catch(e) { files = []; }
+        }
+        if (Array.isArray(files) && files.length > 1) {
+          hasMultipleFiles = true;
+        }
+      }
+
+      let effectiveFileIndex;
+      if (fileIndex !== null && fileIndex !== undefined) {
+        effectiveFileIndex = fileIndex;
+      } else {
+        effectiveFileIndex = isMultiGrid ? 0 : (hasMultipleFiles ? 'all' : 0);
+      }
+
+      await api.post(`/shop/orders/${orderId}/dispatch-to-agent`, { 
+        file_index: effectiveFileIndex,
+        multi_file_grid: isMultiGrid
+      });
+
+      const toast = document.createElement('div');
+      toast.textContent = isMultiGrid 
+        ? '🖨️ Combined grid print job sent to Print Agent' 
+        : (hasMultipleFiles ? '🖨️ Multi-document print jobs sent to Print Agent' : '🖨️ Print job sent to Print Agent');
+      toast.style.cssText = 'position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#059669;color:#fff;padding:12px 24px;border-radius:12px;font-size:13px;font-weight:700;z-index:9999;box-shadow:0 4px 20px rgba(0,0,0,0.3);';
+      document.body.appendChild(toast);
+      setTimeout(() => toast.remove(), 3500);
+
+    } catch (err) {
+      alert('Failed to dispatch print: ' + (err.response?.data?.error || err.message));
+    }
+  };
+
+  const handleStatusUpdate = async (orderId, newStatus) => {
+    try {
+      await api.patch(`/shop/orders/${orderId}/status`, { status: newStatus });
+      fetchPrintOrders(printPagination.page);
+    } catch (err) {
+      alert('Failed to update status: ' + err.message);
+    }
+  };
+
+  const handleApproveAndPrint = async (orderId, verifiedPrintOptions) => {
+    try {
+      await api.patch(`/shop/orders/${orderId}/status`, { 
+        status: 'processing',
+        print_options: verifiedPrintOptions
+      });
+      fetchPrintOrders(printPagination.page);
+    } catch (err) {
+      alert('Failed to approve and print: ' + err.message);
+      throw err;
+    }
+  };
+
   const handleVerifyCode = async (e) => {
     e.preventDefault();
     if (!verifyingOrder || !enteredPickupCode.trim()) return;
@@ -66,7 +141,6 @@ const Orders = () => {
         pickup_code: enteredPickupCode.trim()
       });
 
-      // Update locally
       setStoreOrders(prev => prev.map(o => 
         o.order_id === verifyingOrder.order_id ? { ...o, status: 'collected', collected_at: new Date().toISOString() } : o
       ));
@@ -113,30 +187,40 @@ const Orders = () => {
           <p className="text-xs text-on-surface-variant">Manage in-store customer pickups and document print orders</p>
         </div>
 
-        {/* Tab switch */}
-        <div className="flex items-center gap-2 bg-surface-container border border-outline-variant/30 p-1 rounded-xl">
+        {/* Tab switch & Actions */}
+        <div className="flex items-center gap-3 flex-wrap">
           <button
-            onClick={() => setActiveTab('store')}
-            className={`px-4 py-2 rounded-lg text-xs font-bold transition-colors flex items-center gap-1.5 ${
-              activeTab === 'store'
-                ? 'bg-primary text-on-primary shadow-sm'
-                : 'text-on-surface-variant hover:text-on-surface'
-            }`}
+            onClick={() => setShowNewJobModal(true)}
+            className="flex items-center gap-1.5 px-3.5 py-2 bg-primary text-on-primary font-bold text-xs rounded-xl hover:bg-primary/90 transition-all cursor-pointer shadow-sm shadow-primary/20"
           >
-            <span className="material-symbols-outlined text-[16px]">shopping_bag</span>
-            Store Pickups ({storeOrders.filter(o => o.status === 'placed').length} Pending)
+            <span className="material-symbols-outlined text-[17px]">add_circle</span>
+            <span>+ Walk-in Print</span>
           </button>
-          <button
-            onClick={() => setActiveTab('print')}
-            className={`px-4 py-2 rounded-lg text-xs font-bold transition-colors flex items-center gap-1.5 ${
-              activeTab === 'print'
-                ? 'bg-primary text-on-primary shadow-sm'
-                : 'text-on-surface-variant hover:text-on-surface'
-            }`}
-          >
-            <span className="material-symbols-outlined text-[16px]">print</span>
-            Print Orders
-          </button>
+
+          <div className="flex items-center gap-2 bg-surface-container border border-outline-variant/30 p-1 rounded-xl">
+            <button
+              onClick={() => setActiveTab('store')}
+              className={`px-4 py-2 rounded-lg text-xs font-bold transition-colors flex items-center gap-1.5 cursor-pointer ${
+                activeTab === 'store'
+                  ? 'bg-primary text-on-primary shadow-sm'
+                  : 'text-on-surface-variant hover:text-on-surface'
+              }`}
+            >
+              <span className="material-symbols-outlined text-[16px]">shopping_bag</span>
+              Store Pickups ({storeOrders.filter(o => o.status === 'placed').length} Pending)
+            </button>
+            <button
+              onClick={() => setActiveTab('print')}
+              className={`px-4 py-2 rounded-lg text-xs font-bold transition-colors flex items-center gap-1.5 cursor-pointer ${
+                activeTab === 'print'
+                  ? 'bg-primary text-on-primary shadow-sm'
+                  : 'text-on-surface-variant hover:text-on-surface'
+              }`}
+            >
+              <span className="material-symbols-outlined text-[16px]">print</span>
+              Print Orders
+            </button>
+          </div>
         </div>
       </div>
 
@@ -228,7 +312,7 @@ const Orders = () => {
                                 setEnteredPickupCode('');
                                 setVerificationError('');
                               }}
-                              className="bg-primary hover:bg-primary/90 text-on-primary px-3.5 py-1.5 rounded-xl text-xs font-bold shadow-sm inline-flex items-center gap-1"
+                              className="bg-primary hover:bg-primary/90 text-on-primary px-3.5 py-1.5 rounded-xl text-xs font-bold shadow-sm inline-flex items-center gap-1 cursor-pointer"
                             >
                               <span className="material-symbols-outlined text-[16px]">pin</span>
                               Verify Code
@@ -265,7 +349,7 @@ const Orders = () => {
             </div>
           ) : (
             <div className="bg-surface-container border border-outline-variant rounded-xl overflow-x-auto shadow-sm">
-              <table className="w-full text-left border-collapse font-body-sm text-sm min-w-[720px]">
+              <table className="w-full text-left border-collapse font-body-sm text-sm min-w-[780px]">
                 <thead>
                   <tr className="bg-surface-container-low border-b border-outline-variant text-[0.75rem] uppercase tracking-wider text-on-surface-variant font-bold">
                     <th className="p-4">Order ID</th>
@@ -274,6 +358,7 @@ const Orders = () => {
                     <th className="p-4">Status</th>
                     <th className="p-4">Amount</th>
                     <th className="p-4">Payment</th>
+                    <th className="p-4 text-right">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -283,16 +368,34 @@ const Orders = () => {
                     const isScheduled = opts.pickup_type === 'scheduled' || o.order_id?.startsWith('S');
 
                     return (
-                      <tr key={o.order_id} className="border-b border-outline-variant/30 hover:bg-surface-bright/50 transition-colors">
+                      <tr 
+                        key={o.order_id} 
+                        onClick={() => setSelectedPrintOrder(o)}
+                        className="border-b border-outline-variant/30 hover:bg-surface-bright/50 transition-colors cursor-pointer"
+                      >
                         <td className="p-4 font-mono font-semibold text-primary">#{o.order_id.split('-')[0]}</td>
                         <td className="p-4">
-                          <span className={`px-2 py-1 rounded text-[0.7rem] font-bold ${
-                            isScheduled ? 'bg-cyan-500/15 text-cyan-300 border border-cyan-500/30' : 'bg-amber-500/15 text-amber-300 border border-amber-500/30'
-                          }`}>
-                            {isScheduled ? '🗓️ Scheduled' : '⚡ Express'}
-                          </span>
+                          <div className="flex flex-wrap gap-1.5 items-center">
+                            <span className={`px-2 py-1 rounded text-[0.7rem] font-bold ${
+                              isScheduled ? 'bg-cyan-500/15 text-cyan-300 border border-cyan-500/30' : 'bg-amber-500/15 text-amber-300 border border-amber-500/30'
+                            }`}>
+                              {isScheduled ? '📅 Scheduled' : '⚡ Express'}
+                            </span>
+
+                            {(o.files_deleted || o.deletion_status === 'deleted') && (
+                              <span className="px-1.5 py-0.5 rounded text-[0.65rem] font-semibold bg-zinc-800 text-zinc-400 border border-zinc-700/50">
+                                Erased
+                              </span>
+                            )}
+
+                            {opts.multi_file_grid && (
+                              <span className="px-1.5 py-0.5 rounded text-[0.65rem] font-bold bg-cyan-500/15 text-cyan-300 border border-cyan-500/30">
+                                Grid Layout
+                              </span>
+                            )}
+                          </div>
                         </td>
-                        <td className="p-4 text-on-surface-variant">{new Date(o.created_at).toLocaleString()}</td>
+                        <td className="p-4 text-on-surface-variant text-xs">{new Date(o.created_at).toLocaleString()}</td>
                         <td className="p-4">
                           <span className={`px-2 py-1 rounded text-[0.7rem] font-bold uppercase ${
                             o.status === 'ready' ? 'bg-green-500/15 text-green-400' :
@@ -305,9 +408,38 @@ const Orders = () => {
                         </td>
                         <td className="p-4 font-bold text-on-surface">₹{o.amount_total}</td>
                         <td className="p-4">
-                          <span className={`text-[11px] font-bold ${o.payment_status === 'captured' ? 'text-green-400' : 'text-amber-400'}`}>
-                            {o.payment_status === 'captured' ? 'Paid' : 'Pending'}
+                          <span className={`text-[11px] font-bold ${
+                            (o.payment_method === 'COD' || o.payment_id?.startsWith('COD-') || o.print_options?.payment_method === 'COD')
+                              ? 'text-amber-400 font-semibold'
+                              : o.payment_status === 'captured' ? 'text-green-400' : 'text-amber-400'
+                          }`}>
+                            {(o.payment_method === 'COD' || o.payment_id?.startsWith('COD-') || o.print_options?.payment_method === 'COD')
+                              ? 'Pay at Shop'
+                              : (o.payment_status === 'captured' ? 'Paid' : 'Pending')}
                           </span>
+                        </td>
+                        <td className="p-4 text-right">
+                          <div className="flex items-center justify-end gap-1.5">
+                            <button
+                              type="button"
+                              onClick={(e) => { e.stopPropagation(); setSelectedPrintOrder(o); }}
+                              className="px-2.5 py-1 bg-surface-container hover:bg-surface-variant text-on-surface border border-outline-variant font-bold rounded-lg text-xs transition-colors flex items-center gap-1 cursor-pointer"
+                              title="View document specs and files"
+                            >
+                              <span className="material-symbols-outlined text-[14px]">visibility</span>
+                              <span>Details</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={(e) => { e.stopPropagation(); handlePrint(o.order_id); }}
+                              disabled={Boolean(o.files_deleted)}
+                              className="px-2.5 py-1 bg-primary text-on-primary hover:bg-primary/90 font-bold rounded-lg text-xs transition-colors flex items-center gap-1 cursor-pointer shadow-sm disabled:opacity-40 disabled:cursor-not-allowed"
+                              title={o.files_deleted ? "Document permanently erased" : "Reprint to connected Print Agent"}
+                            >
+                              <span className="material-symbols-outlined text-[14px]">print</span>
+                              <span>Reprint</span>
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     );
@@ -381,6 +513,37 @@ const Orders = () => {
             </form>
           </div>
         </div>
+      )}
+
+      {/* Order Detail Modal */}
+      {selectedPrintOrder && (
+        <OrderDetailModal
+          order={selectedPrintOrder}
+          onClose={() => setSelectedPrintOrder(null)}
+          onStatusUpdate={handleStatusUpdate}
+          onPrint={handlePrint}
+          onReviewAndAccept={(o) => {
+            setSelectedPrintOrder(null);
+            setReviewOrder(o);
+          }}
+        />
+      )}
+
+      {/* Print Review & Approval Modal */}
+      {reviewOrder && (
+        <PrintReviewModal
+          order={reviewOrder}
+          onClose={() => setReviewOrder(null)}
+          onApprove={handleApproveAndPrint}
+        />
+      )}
+
+      {/* Walk-in Print Creation Modal */}
+      {showNewJobModal && (
+        <NewPrintJobModal
+          onClose={() => setShowNewJobModal(false)}
+          onJobCreated={() => fetchPrintOrders(printPagination.page)}
+        />
       )}
     </div>
   );

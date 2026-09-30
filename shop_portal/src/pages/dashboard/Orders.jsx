@@ -408,8 +408,14 @@ const Orders = () => {
                         </td>
                         <td className="p-4 font-bold text-on-surface">₹{o.amount_total}</td>
                         <td className="p-4">
-                          <span className={`text-[11px] font-bold ${o.payment_status === 'captured' ? 'text-green-400' : 'text-amber-400'}`}>
-                            {o.payment_status === 'captured' ? 'Paid' : 'Pending'}
+                          <span className={`text-[11px] font-bold ${
+                            (o.payment_method === 'COD' || o.payment_id?.startsWith('COD-') || o.print_options?.payment_method === 'COD')
+                              ? 'text-amber-400 font-semibold'
+                              : o.payment_status === 'captured' ? 'text-green-400' : 'text-amber-400'
+                          }`}>
+                            {(o.payment_method === 'COD' || o.payment_id?.startsWith('COD-') || o.print_options?.payment_method === 'COD')
+                              ? 'Pay at Shop'
+                              : (o.payment_status === 'captured' ? 'Paid' : 'Pending')}
                           </span>
                         </td>
                         <td className="p-4 text-right">

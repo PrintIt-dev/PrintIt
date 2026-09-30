@@ -8,6 +8,7 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'dart:io' show Platform;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:razorpay_flutter/razorpay_flutter.dart';
+import 'package:http_parser/http_parser.dart';
 import '../../shared/widgets/ambient_background.dart';
 import '../../shared/widgets/glass_container.dart';
 import '../../core/api/api_client.dart';
@@ -23,8 +24,9 @@ class SecurePaymentScreen extends ConsumerStatefulWidget {
 }
 
 class _SecurePaymentScreenState extends ConsumerState<SecurePaymentScreen> {
+  static const bool enableOnlinePayments = false; // Set to true to re-enable Razorpay online payment
   bool _isProcessing = false;
-  String _selectedMethod = 'UPI';
+  String _selectedMethod = 'Pay at Shop';
   bool _useWallet = false;
   Razorpay? _razorpay;
   final List<Map<String, dynamic>> _uploadedFiles = [];
@@ -67,6 +69,22 @@ class _SecurePaymentScreenState extends ConsumerState<SecurePaymentScreen> {
         'pickup_type': orderState.pickupType,
         'pickup_time': orderState.pickupTime?.toIso8601String(),
         'print_mode': orderState.printMode,
+        'print_options': {
+          'multi_file_grid': orderState.multiFileGrid,
+          'pages_per_paper': orderState.pagesPerPaper,
+          'repeat_image_on_grid': orderState.repeatImageOnGrid,
+          'color': orderState.colorMode == 'Color' ? 'color' : 'bw',
+          'size': 'A4',
+          'sides': orderState.sides,
+          'orientation': orderState.orientation,
+          'copies': orderState.copies,
+          'binding': orderState.binding,
+          'pages': orderState.pageRange.isNotEmpty ? orderState.pageRange : null,
+          'page_range': orderState.pageRange.isNotEmpty ? orderState.pageRange : null,
+          'print_instructions': orderState.printInstructions,
+        },
+        'print_instructions': orderState.printInstructions,
+
       };
 
       if (isLoggedIn) {
@@ -90,7 +108,7 @@ class _SecurePaymentScreenState extends ConsumerState<SecurePaymentScreen> {
       if (e is DioException && e.response?.data != null) {
         final data = e.response!.data;
         if (data is Map && data.containsKey('error')) {
-          errorMsg = '${data['error']}${data.containsKey('details') ? ' (' + data['details'].toString() + ')' : ''}';
+          errorMsg = '${data['error']}${data.containsKey('details') ? ' (${data['details']})' : ''}';
         }
       } else if (e is Exception) {
         errorMsg = e.toString().replaceFirst('Exception: ', '');
@@ -132,6 +150,13 @@ class _SecurePaymentScreenState extends ConsumerState<SecurePaymentScreen> {
           'pickup_type': orderState.pickupType,
           'pickup_time': orderState.pickupTime?.toIso8601String(),
           'print_mode': orderState.printMode,
+          'print_options': {
+            'multi_file_grid': orderState.multiFileGrid,
+            'pages_per_paper': orderState.pagesPerPaper,
+            'repeat_image_on_grid': orderState.repeatImageOnGrid,
+            'color': orderState.colorMode == 'Color' ? 'color' : 'bw',
+            'pages': orderState.pageRange.isNotEmpty ? orderState.pageRange : null,
+          },
         });
       }
     } catch (e) {
@@ -165,10 +190,14 @@ class _SecurePaymentScreenState extends ConsumerState<SecurePaymentScreen> {
           'orientation': fileEntry.orientation,
           'copies': fileEntry.copies,
           'binding': fileEntry.binding == 'hardcover' ? 'spiral' : fileEntry.binding,
-          'pages_per_paper': fileEntry.pagesPerPaper,
+          'pages_per_paper': orderState.multiFileGrid ? orderState.pagesPerPaper : fileEntry.pagesPerPaper,
           'repeat_image_on_grid': fileEntry.repeatImageOnGrid,
+          'multi_file_grid': orderState.multiFileGrid,
+          'pages': orderState.pageRange.isNotEmpty ? orderState.pageRange : (fileEntry.pageRange.isNotEmpty ? fileEntry.pageRange : null),
+          'page_range': orderState.pageRange.isNotEmpty ? orderState.pageRange : (fileEntry.pageRange.isNotEmpty ? fileEntry.pageRange : null),
         },
         'print_instructions': fileEntry.printInstructions,
+
       });
     }
     return payload;
@@ -219,6 +248,11 @@ class _SecurePaymentScreenState extends ConsumerState<SecurePaymentScreen> {
       _isProcessing = true;
     });
 
+    if (_selectedMethod == 'Pay at Shop') {
+      await _processCodOrder();
+      return;
+    }
+
     try {
       final dio = ref.read(apiProvider);
       
@@ -226,14 +260,27 @@ class _SecurePaymentScreenState extends ConsumerState<SecurePaymentScreen> {
       if (_uploadedFiles.isEmpty) {
         for (final entry in orderState.files) {
           final uploadData = FormData();
+          final mediaType = _getMediaType(entry.file.name);
           if (entry.file.bytes != null) {
             uploadData.files.add(MapEntry(
-              'file', MultipartFile.fromBytes(entry.file.bytes!, filename: entry.file.name),
+              'file',
+              MultipartFile.fromBytes(
+                entry.file.bytes!,
+                filename: entry.file.name,
+                contentType: mediaType,
+              ),
             ));
           } else if (!kIsWeb && entry.file.path != null) {
             uploadData.files.add(MapEntry(
-              'file', await MultipartFile.fromFile(entry.file.path!, filename: entry.file.name),
+              'file',
+              await MultipartFile.fromFile(
+                entry.file.path!,
+                filename: entry.file.name,
+                contentType: mediaType,
+              ),
             ));
+          } else {
+            throw Exception('File content not available for ${entry.file.name}. Please select the document again.');
           }
 
           final uploadEndpoint = '${isLoggedIn ? '/upload' : '/upload/guest'}?print_mode=${orderState.printMode}';
@@ -297,7 +344,157 @@ class _SecurePaymentScreenState extends ConsumerState<SecurePaymentScreen> {
       }
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Process Failed: $e')));
+      final errorMsg = _extractErrorMessage(e);
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Process Failed: $errorMsg')));
+      setState(() => _isProcessing = false);
+    }
+  }
+
+  MediaType _getMediaType(String filename) {
+    final ext = filename.split('.').last.toLowerCase();
+    switch (ext) {
+      case 'pdf':
+        return MediaType('application', 'pdf');
+      case 'jpg':
+      case 'jpeg':
+        return MediaType('image', 'jpeg');
+      case 'png':
+        return MediaType('image', 'png');
+      case 'webp':
+        return MediaType('image', 'webp');
+      case 'doc':
+        return MediaType('application', 'msword');
+      case 'docx':
+        return MediaType('application', 'vnd.openxmlformats-officedocument.wordprocessingml.document');
+      case 'ppt':
+        return MediaType('application', 'vnd.ms-powerpoint');
+      case 'pptx':
+        return MediaType('application', 'vnd.openxmlformats-officedocument.presentationml.presentation');
+      case 'xls':
+        return MediaType('application', 'vnd.ms-excel');
+      case 'xlsx':
+        return MediaType('application', 'vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      case 'txt':
+        return MediaType('text', 'plain');
+      default:
+        return MediaType('application', 'octet-stream');
+    }
+  }
+
+  String _extractErrorMessage(dynamic e) {
+    if (e is DioException) {
+      final data = e.response?.data;
+      if (data is Map) {
+        final msg = data['error'] ?? data['message'];
+        if (msg != null && msg.toString().isNotEmpty) {
+          final details = data['details'];
+          return details != null ? '$msg ($details)' : msg.toString();
+        }
+      }
+      if (e.message != null && e.message!.isNotEmpty) {
+        return e.message!;
+      }
+    }
+    return e.toString().replaceFirst('Exception: ', '');
+  }
+
+  Future<void> _processCodOrder() async {
+    final orderState = ref.read(orderProvider);
+    if (orderState.files.isEmpty || orderState.shopId == null) return;
+
+    try {
+      final dio = ref.read(apiProvider);
+      final authState = ref.read(authProvider);
+      final isLoggedIn = authState.user != null;
+
+      // 1. Upload files (Skip if already uploaded)
+      if (_uploadedFiles.isEmpty) {
+        for (final entry in orderState.files) {
+          final uploadData = FormData();
+          final mediaType = _getMediaType(entry.file.name);
+          if (entry.file.bytes != null) {
+            uploadData.files.add(MapEntry(
+              'file',
+              MultipartFile.fromBytes(
+                entry.file.bytes!,
+                filename: entry.file.name,
+                contentType: mediaType,
+              ),
+            ));
+          } else if (!kIsWeb && entry.file.path != null) {
+            uploadData.files.add(MapEntry(
+              'file',
+              await MultipartFile.fromFile(
+                entry.file.path!,
+                filename: entry.file.name,
+                contentType: mediaType,
+              ),
+            ));
+          } else {
+            throw Exception('File content not available for ${entry.file.name}. Please select the document again.');
+          }
+
+          final uploadEndpoint = '${isLoggedIn ? '/upload' : '/upload/guest'}?print_mode=${orderState.printMode}';
+          final uploadRes = await dio.post(uploadEndpoint, data: uploadData);
+          if (uploadRes.statusCode != 201) throw Exception('File upload failed for ${entry.file.name}');
+          
+          _uploadedFiles.add(uploadRes.data['file']);
+        }
+      }
+
+      // 2. Dispatch Pay at Shop (COD) order
+      final codEndpoint = isLoggedIn ? '/payments/cod' : '/payments/guest/cod';
+      final orderData = {
+        'shop_id': orderState.shopId,
+        'files': _buildOrderPayload(orderState),
+        'amount_total': orderState.amountTotal,
+        'pickup_type': orderState.pickupType,
+        'pickup_time': orderState.pickupTime?.toIso8601String(),
+        'print_mode': orderState.printMode,
+        'payment_method': 'COD',
+        'customer_phone': isLoggedIn ? (authState.user!['phone'] ?? '') : '',
+        'print_options': {
+          'multi_file_grid': orderState.multiFileGrid,
+          'pages_per_paper': orderState.pagesPerPaper,
+          'repeat_image_on_grid': orderState.repeatImageOnGrid,
+          'color': orderState.colorMode == 'Color' ? 'color' : 'bw',
+          'size': 'A4',
+          'sides': orderState.sides,
+          'orientation': orderState.orientation,
+          'copies': orderState.copies,
+          'binding': orderState.binding,
+          'pages': orderState.pageRange.isNotEmpty ? orderState.pageRange : null,
+          'page_range': orderState.pageRange.isNotEmpty ? orderState.pageRange : null,
+          'print_instructions': orderState.printInstructions,
+          'payment_method': 'COD',
+        },
+        'print_instructions': orderState.printInstructions,
+      };
+
+      if (isLoggedIn) {
+        orderData['customer_id'] = authState.user!['user_id'];
+      }
+
+      final codRes = await dio.post(codEndpoint, data: orderData);
+
+      if (codRes.statusCode == 201 || codRes.statusCode == 200) {
+        if (!mounted) return;
+        final createdOrderId = codRes.data['order']?['order_id'] ?? '';
+        ref.read(orderProvider.notifier).reset();
+        context.go('/order-success?orderId=$createdOrderId');
+      } else {
+        throw Exception('Failed to place Pay at Shop order');
+      }
+    } catch (e) {
+      if (!mounted) return;
+      final errorMsg = _extractErrorMessage(e);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to place order: $errorMsg'),
+          backgroundColor: Colors.red.shade700,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
       setState(() => _isProcessing = false);
     }
   }
@@ -317,10 +514,27 @@ class _SecurePaymentScreenState extends ConsumerState<SecurePaymentScreen> {
       if (_uploadedFiles.isEmpty) {
         for (final entry in orderState.files) {
           final uploadData = FormData();
+          final mediaType = _getMediaType(entry.file.name);
           if (entry.file.bytes != null) {
-            uploadData.files.add(MapEntry('file', MultipartFile.fromBytes(entry.file.bytes!, filename: entry.file.name)));
+            uploadData.files.add(MapEntry(
+              'file',
+              MultipartFile.fromBytes(
+                entry.file.bytes!,
+                filename: entry.file.name,
+                contentType: mediaType,
+              ),
+            ));
           } else if (!kIsWeb && entry.file.path != null) {
-            uploadData.files.add(MapEntry('file', await MultipartFile.fromFile(entry.file.path!, filename: entry.file.name)));
+            uploadData.files.add(MapEntry(
+              'file',
+              await MultipartFile.fromFile(
+                entry.file.path!,
+                filename: entry.file.name,
+                contentType: mediaType,
+              ),
+            ));
+          } else {
+            throw Exception('File content not available for ${entry.file.name}. Please select the document again.');
           }
           final uploadEndpoint = '${isLoggedIn ? '/upload' : '/upload/guest'}?print_mode=${orderState.printMode}';
           final uploadRes = await dio.post(uploadEndpoint, data: uploadData);
@@ -349,7 +563,8 @@ class _SecurePaymentScreenState extends ConsumerState<SecurePaymentScreen> {
       }
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Wallet Payment Failed: $e')));
+      final errorMsg = _extractErrorMessage(e);
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Wallet Payment Failed: $errorMsg')));
       setState(() => _isProcessing = false);
     }
   }
@@ -521,20 +736,29 @@ class _SecurePaymentScreenState extends ConsumerState<SecurePaymentScreen> {
                         const SizedBox(height: 12),
                         
                         // Methods
-                        if (isLoggedIn) ...[
-                          _buildPaymentMethod(
-                            'PrintIt Wallet', 
-                            'Balance: ₹${walletBalance.toStringAsFixed(2)}', 
-                            Icons.account_balance_wallet,
-                            disabled: walletBalance < orderState.amountTotal
-                          ),
+                        _buildPaymentMethod(
+                          'Pay at Shop',
+                          'Pay the shopkeeper when you collect your printed documents.',
+                          Icons.storefront,
+                        ),
+                        const SizedBox(height: 8),
+
+                        if (enableOnlinePayments) ...[
+                          if (isLoggedIn) ...[
+                            _buildPaymentMethod(
+                              'PrintIt Wallet', 
+                              'Balance: ₹${walletBalance.toStringAsFixed(2)}', 
+                              Icons.account_balance_wallet,
+                              disabled: walletBalance < orderState.amountTotal
+                            ),
+                            const SizedBox(height: 8),
+                          ],
+                          _buildPaymentMethod('UPI', 'GPay, PhonePe, Paytm', Icons.qr_code_scanner),
                           const SizedBox(height: 8),
+                          _buildPaymentMethod('Credit / Debit Card', 'Visa, Mastercard, RuPay', Icons.credit_card),
+                          const SizedBox(height: 8),
+                          _buildPaymentMethod('Net Banking', 'All major banks supported', Icons.account_balance),
                         ],
-                        _buildPaymentMethod('UPI', 'GPay, PhonePe, Paytm', Icons.qr_code_scanner),
-                        const SizedBox(height: 8),
-                        _buildPaymentMethod('Credit / Debit Card', 'Visa, Mastercard, RuPay', Icons.credit_card),
-                        const SizedBox(height: 8),
-                        _buildPaymentMethod('Net Banking', 'All major banks supported', Icons.account_balance),
                       ],
                     ),
                   ),
@@ -553,10 +777,16 @@ class _SecurePaymentScreenState extends ConsumerState<SecurePaymentScreen> {
                       Row(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          Icon(Icons.lock, size: 16, color: Theme.of(context).colorScheme.onSurfaceVariant),
-                          SizedBox(width: 8),
+                          Icon(
+                            _selectedMethod == 'Pay at Shop' ? Icons.storefront : Icons.lock, 
+                            size: 16, 
+                            color: Theme.of(context).colorScheme.onSurfaceVariant
+                          ),
+                          const SizedBox(width: 8),
                           Text(
-                            'Secure encrypted payment',
+                            _selectedMethod == 'Pay at Shop'
+                                ? 'Pay directly at shop counter upon pickup'
+                                : 'Secure encrypted payment',
                             style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 12),
                           ),
                         ],
@@ -590,8 +820,10 @@ class _SecurePaymentScreenState extends ConsumerState<SecurePaymentScreen> {
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
                                     Text(
-                                      'Pay ₹${orderState.amountTotal.toStringAsFixed(2)} Now',
-                                      style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+                                      _selectedMethod == 'Pay at Shop'
+                                          ? 'Place Order • Pay ₹${orderState.amountTotal.toStringAsFixed(2)} at Shop'
+                                          : 'Pay ₹${orderState.amountTotal.toStringAsFixed(2)} Now',
+                                      style: const TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.bold),
                                     ),
                                     const SizedBox(width: 8),
                                     const Icon(Icons.arrow_forward, color: Colors.white),

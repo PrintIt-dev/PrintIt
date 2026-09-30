@@ -245,6 +245,87 @@ router.post('/guest/fail', async (req, res) => {
     }
 });
 
+// POST /api/payments/guest/cod — Create Pay at Shop (COD) order without online payment
+router.post('/guest/cod', async (req, res) => {
+    const {
+        shop_id,
+        files,
+        amount_total,
+        customer_phone
+    } = req.body;
+
+    if (!shop_id || !files || !Array.isArray(files) || files.length === 0 || !amount_total) {
+        return res.status(400).json({ error: 'Missing required order details' });
+    }
+
+    const reqPrintOptions = (typeof req.body.print_options === 'object' && req.body.print_options !== null) ? req.body.print_options : {};
+    const pickupOptions = JSON.stringify({
+        ...reqPrintOptions,
+        pickup_type: req.body.pickup_type || reqPrintOptions.pickup_type || 'express',
+        pickup_time: req.body.pickup_time || reqPrintOptions.pickup_time || null,
+        payment_method: 'COD'
+    });
+
+    const client = await pool.connect();
+    try {
+        await client.query('BEGIN');
+
+        // Server-Side Pricing Validation
+        const { minRequiredAmount } = await calculatePrintSubtotal(client, shop_id, files);
+        if (parseFloat(amount_total) < minRequiredAmount) {
+            await client.query('ROLLBACK');
+            return res.status(400).json({
+                error: `Order amount insufficient. Minimum required ₹${minRequiredAmount}, received ₹${amount_total}`
+            });
+        }
+
+        const queueResult = await client.query(
+            `SELECT COUNT(*) FROM orders
+             WHERE shop_id = $1 AND status = 'queued'`,
+            [shop_id]
+        );
+        const queue_position = parseInt(queueResult.rows[0].count) + 1;
+
+        const orderId = await generateOrderId(req.body.pickup_type || 'express', client);
+        const cancelToken = crypto.randomBytes(16).toString('hex');
+        const printMode = req.body.print_mode || 'normal';
+        const codPaymentId = `COD-${Date.now()}-${crypto.randomBytes(3).toString('hex').toUpperCase()}`;
+
+        const result = await client.query(
+            `INSERT INTO orders (
+                order_id, customer_id, shop_id, files, print_options, status, queue_position, amount_total, payment_status, payment_id, print_instructions, cancel_token, print_mode, deletion_status, payment_method, customer_phone
+            ) VALUES ($1, NULL, $2, $3, $4, 'queued', $5, $6, 'pending', $7, $8, $9, $10, 'active', 'COD', $11)
+            RETURNING *`,
+            [
+                orderId,
+                shop_id,
+                JSON.stringify(files),
+                pickupOptions,
+                queue_position,
+                amount_total,
+                codPaymentId,
+                extractInstructions(req.body, files),
+                cancelToken,
+                printMode,
+                customer_phone || null
+            ]
+        );
+
+        await client.query('COMMIT');
+        return res.status(201).json({
+            message: 'Pay at Shop order placed successfully',
+            order: result.rows[0],
+            cancel_token: cancelToken
+        });
+    } catch (err) {
+        await client.query('ROLLBACK');
+        console.error('Guest COD order creation error:', err);
+        res.status(500).json({ error: 'Failed to place Pay at Shop order. Please try again.' });
+    } finally {
+        client.release();
+    }
+});
+
 // POST /api/payments/webhook — Server-to-Server Razorpay Webhook Handler
 router.post('/webhook', async (req, res) => {
     const signature = req.headers['x-razorpay-signature'];
@@ -625,6 +706,99 @@ router.post('/wallet', async (req, res) => {
         await client.query('ROLLBACK');
         console.error('Wallet payment error:', err);
         res.status(500).json({ error: 'Wallet payment failed' });
+    } finally {
+        client.release();
+    }
+});
+
+// POST /api/payments/cod — Create Pay at Shop (COD) order for authenticated user
+router.post('/cod', async (req, res) => {
+    const {
+        shop_id,
+        files,
+        amount_total,
+        customer_phone
+    } = req.body;
+
+    if (!shop_id || !files || !Array.isArray(files) || files.length === 0 || !amount_total) {
+        return res.status(400).json({ error: 'Missing required order details' });
+    }
+
+    const reqPrintOptions = (typeof req.body.print_options === 'object' && req.body.print_options !== null) ? req.body.print_options : {};
+    const pickupOptions = JSON.stringify({
+        ...reqPrintOptions,
+        pickup_type: req.body.pickup_type || reqPrintOptions.pickup_type || 'express',
+        pickup_time: req.body.pickup_time || reqPrintOptions.pickup_time || null,
+        payment_method: 'COD'
+    });
+
+    const client = await pool.connect();
+    try {
+        await client.query('BEGIN');
+
+        // Server-Side Pricing Validation
+        const { minRequiredAmount } = await calculatePrintSubtotal(client, shop_id, files);
+        if (parseFloat(amount_total) < minRequiredAmount) {
+            await client.query('ROLLBACK');
+            return res.status(400).json({
+                error: `Order amount insufficient. Minimum required ₹${minRequiredAmount}, received ₹${amount_total}`
+            });
+        }
+
+        const queueResult = await client.query(
+            `SELECT COUNT(*) FROM orders
+             WHERE shop_id = $1 AND status = 'queued'`,
+            [shop_id]
+        );
+        const queue_position = parseInt(queueResult.rows[0].count) + 1;
+
+        const orderId = await generateOrderId(req.body.pickup_type || 'express', client);
+        const printMode = req.body.print_mode || 'normal';
+        const codPaymentId = `COD-${Date.now()}-${crypto.randomBytes(3).toString('hex').toUpperCase()}`;
+
+        const result = await client.query(
+            `INSERT INTO orders (
+                order_id,
+                customer_id,
+                shop_id,
+                files,
+                print_options,
+                status,
+                queue_position,
+                amount_total,
+                payment_status,
+                payment_id,
+                print_instructions,
+                print_mode,
+                deletion_status,
+                payment_method,
+                customer_phone
+            ) VALUES ($1, $2, $3, $4, $5, 'queued', $6, $7, 'pending', $8, $9, $10, 'active', 'COD', $11)
+            RETURNING *`,
+            [
+                orderId,
+                req.user.user_id,
+                shop_id,
+                JSON.stringify(files),
+                pickupOptions,
+                queue_position,
+                amount_total,
+                codPaymentId,
+                extractInstructions(req.body, files),
+                printMode,
+                customer_phone || (req.user ? req.user.phone : null) || null
+            ]
+        );
+
+        await client.query('COMMIT');
+        return res.status(201).json({
+            message: 'Pay at Shop order placed successfully',
+            order: result.rows[0]
+        });
+    } catch (err) {
+        await client.query('ROLLBACK');
+        console.error('Authenticated COD order creation error:', err);
+        res.status(500).json({ error: 'Failed to place Pay at Shop order. Please try again.' });
     } finally {
         client.release();
     }

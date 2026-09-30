@@ -106,6 +106,7 @@ class OrderTrackingScreen extends ConsumerWidget {
     final queuePos = order['queue_position'];
     final amount = order['amount_total'];
     final paymentStatus = (order['payment_status'] ?? 'unknown').toString();
+    final isCod = order['payment_method'] == 'COD' || (order['payment_id'] != null && order['payment_id'].toString().startsWith('COD-'));
     final printInstructions = order['print_instructions'] as String?;
 
     // Status steps
@@ -302,12 +303,43 @@ class OrderTrackingScreen extends ConsumerWidget {
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Text('Payment', style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 14)),
-                    Text(paymentStatus.toUpperCase(), style: TextStyle(color: Theme.of(context).colorScheme.onSurface, fontWeight: FontWeight.bold, fontSize: 14)),
+                    Text(
+                      isCod ? 'Pay at Shop' : paymentStatus.toUpperCase(), 
+                      style: TextStyle(
+                        color: isCod ? Colors.amber : Theme.of(context).colorScheme.onSurface, 
+                        fontWeight: FontWeight.bold, 
+                        fontSize: 14,
+                      ),
+                    ),
                   ],
                 ),
               ],
             ),
           ),
+
+          if (isCod) ...[
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: Colors.amber.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.amber.withValues(alpha: 0.3)),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.storefront, color: Colors.amber, size: 20),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      'Please pay ₹${amount ?? '-'} directly to the shopkeeper when collecting your prints.',
+                      style: const TextStyle(fontSize: 13, color: Colors.amber, fontWeight: FontWeight.w500),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
 
           if (printInstructions != null && printInstructions.isNotEmpty) ...[
             const SizedBox(height: 16),

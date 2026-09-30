@@ -390,8 +390,16 @@ const OrderDetailModal = ({ order, onClose, onStatusUpdate, onPrint, onReviewAnd
                 <div className="bg-surface-bright p-3 rounded-xl border border-outline-variant">
                   <span className="block text-[10px] uppercase font-bold text-on-surface-variant tracking-wider mb-0.5">Total Price</span>
                   <span className="text-xl font-bold text-on-surface font-mono">₹{order.amount_total}</span>
-                  <span className={`block text-[10px] font-semibold mt-0.5 ${order.payment_status === 'captured' ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-500'}`}>
-                    {order.payment_status === 'captured' ? '✓ Paid' : '⌛ Pending'}
+                  <span className={`block text-[10px] font-semibold mt-0.5 ${
+                    (order.payment_method === 'COD' || order.payment_id?.startsWith('COD-') || opts.payment_method === 'COD')
+                      ? 'text-amber-500 dark:text-amber-400 font-bold'
+                      : order.payment_status === 'captured' 
+                        ? 'text-emerald-600 dark:text-emerald-400' 
+                        : 'text-amber-500'
+                  }`}>
+                    {(order.payment_method === 'COD' || order.payment_id?.startsWith('COD-') || opts.payment_method === 'COD')
+                      ? '💵 Pay at Shop'
+                      : (order.payment_status === 'captured' ? '✓ Paid' : '⌛ Pending')}
                   </span>
                 </div>
 
@@ -426,6 +434,13 @@ const OrderDetailModal = ({ order, onClose, onStatusUpdate, onPrint, onReviewAnd
                   </span>
                 </div>
               </div>
+
+              {(order.payment_method === 'COD' || order.payment_id?.startsWith('COD-') || opts.payment_method === 'COD') && (
+                <div className="p-3 bg-amber-500/10 border border-amber-500/30 rounded-xl flex items-center gap-2.5 text-xs text-amber-300">
+                  <span className="material-symbols-outlined text-amber-400 text-lg">storefront</span>
+                  <span><strong>Pay at Shop:</strong> Collect ₹{order.amount_total} directly from customer upon document collection.</span>
+                </div>
+              )}
 
               {/* Pickup Notice */}
               <div className="bg-surface-container-high border border-outline-variant p-3 rounded-xl flex items-start gap-2.5">

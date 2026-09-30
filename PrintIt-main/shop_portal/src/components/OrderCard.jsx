@@ -1,6 +1,6 @@
 import React from 'react';
 
-const OrderCard = ({ order, colType, onStatusUpdate, onPrint, onOpenModal }) => {
+const OrderCard = ({ order, colType, onStatusUpdate, onPrint, onOpenModal, onReviewAndAccept }) => {
   const shortId = order.order_id.split('-')[0];
   
   let files = [];
@@ -19,7 +19,13 @@ const OrderCard = ({ order, colType, onStatusUpdate, onPrint, onOpenModal }) => 
   try {
     opts = typeof order.print_options === 'string' ? JSON.parse(order.print_options) : (order.print_options || {});
   } catch(e) {}
-  if (Object.keys(opts).length === 0 && files.length > 0 && files[0].print_options) {
+  if (files.length > 0 && files[0].print_options) {
+    try {
+      const fileOpts = typeof files[0].print_options === 'string' ? JSON.parse(files[0].print_options) : files[0].print_options;
+      opts = { ...opts, ...fileOpts };
+    } catch(e) {}
+  }
+  if (false) {
     try {
       opts = typeof files[0].print_options === 'string' ? JSON.parse(files[0].print_options) : files[0].print_options;
     } catch(e) {}
@@ -37,29 +43,50 @@ const OrderCard = ({ order, colType, onStatusUpdate, onPrint, onOpenModal }) => 
   const handleAction = async (status, e) => {
     e.stopPropagation();
     if (status === 'processing') {
-      onPrint(order.order_id, true);
+      if (onReviewAndAccept) {
+        onReviewAndAccept(order);
+        return;
+      }
+      onPrint(order.order_id);
     }
     onStatusUpdate(order.order_id, status);
   };
 
   const handlePrintClick = (e) => {
     e.stopPropagation();
-    onPrint(order.order_id, false);
+    onPrint(order.order_id);
   };
 
   return (
     <div 
+      data-order-id={order.order_id}
       className="bg-surface-container backdrop-blur-md rounded-xl border border-glass-edge/40 p-5 hover:border-primary/50 transition-all shadow-sm hover:shadow-md relative group cursor-pointer flex flex-col"
       onClick={() => onOpenModal(order)}
     >
       {/* Card Header */}
       <div className="flex justify-between items-start mb-3">
         <div>
-          <div className="flex items-center gap-2 mb-1">
+          <div className="flex items-center gap-2 mb-1 flex-wrap">
             <span className="font-display text-xl text-primary font-bold tracking-tight">#{shortId}</span>
             {order.queue_position && colType === 'queued' && (
               <span className="bg-surface-container/80 px-2 py-0.5 rounded text-[11px] text-on-surface-variant font-medium border border-glass-edge/30">
                 Pos {order.queue_position}
+              </span>
+            )}
+
+
+
+            {order.files_deleted && (
+              <span className="inline-flex items-center gap-0.5 bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 text-[9px] font-medium px-1.5 py-0.5 rounded">
+                <span className="material-symbols-outlined text-[11px]">delete_sweep</span>
+                Erased
+              </span>
+            )}
+
+            {opts.multi_file_grid && (
+              <span className="inline-flex items-center gap-0.5 bg-cyan-500/15 text-cyan-300 border border-cyan-500/30 text-[9px] font-bold px-1.5 py-0.5 rounded">
+                <span className="material-symbols-outlined text-[11px]">grid_view</span>
+                {opts.pages_per_paper || files.length || 4}-UP GRID
               </span>
             )}
           </div>
@@ -77,16 +104,27 @@ const OrderCard = ({ order, colType, onStatusUpdate, onPrint, onOpenModal }) => 
             <span className="text-[11px] text-on-surface-variant/70 font-medium">Total</span>
             {order.payment_status && (
               <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wider ${
-                order.payment_status === 'captured' 
-                  ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30' 
-                  : 'bg-amber-500/15 text-amber-400 border border-amber-500/30'
+                (order.payment_method === 'COD' || order.payment_id?.startsWith('COD-') || opts.payment_method === 'COD')
+                  ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+                  : order.payment_status === 'captured' 
+                    ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30' 
+                    : 'bg-amber-500/15 text-amber-400 border border-amber-500/30'
               }`}>
-                {order.payment_status === 'captured' ? 'Paid' : 'Unpaid'}
+                {(order.payment_method === 'COD' || order.payment_id?.startsWith('COD-') || opts.payment_method === 'COD')
+                  ? 'Pay at Shop'
+                  : (order.payment_status === 'captured' ? 'Paid' : 'Unpaid')}
               </span>
             )}
           </div>
         </div>
       </div>
+
+      {(order.payment_method === 'COD' || order.payment_id?.startsWith('COD-') || opts.payment_method === 'COD') && (
+        <div className="mb-3 text-[11px] text-amber-300 font-medium bg-amber-500/10 px-2.5 py-1 rounded-md border border-amber-500/20 flex items-center gap-1.5">
+          <span className="material-symbols-outlined text-[14px] text-amber-400">storefront</span>
+          <span>Pay at Shop: Collect ₹{order.amount_total} at pickup</span>
+        </div>
+      )}
 
       {/* Divider */}
       <div className="h-px w-full bg-glass-edge/20 mb-4"></div>
@@ -99,7 +137,10 @@ const OrderCard = ({ order, colType, onStatusUpdate, onPrint, onOpenModal }) => 
         </div>
         <div>
           <span className="block text-[10px] font-semibold uppercase tracking-wider text-outline mb-0.5">CONFIG</span>
-          <span className="text-on-surface font-medium">{opts.size || 'A4'} {opts.sides === 'double' ? 'Double' : 'Single'}</span>
+          <span className="text-on-surface font-medium">
+            {opts.size || 'A4'} {opts.sides === 'double' ? 'Double' : 'Single'}
+            {opts.multi_file_grid ? ` (${opts.pages_per_paper || files.length || 4}-up)` : ''}
+          </span>
         </div>
         <div>
           <span className="block text-[10px] font-semibold uppercase tracking-wider text-outline mb-0.5">COPIES</span>
@@ -141,7 +182,7 @@ const OrderCard = ({ order, colType, onStatusUpdate, onPrint, onOpenModal }) => 
               className="flex-1 bg-primary hover:bg-primary/90 text-on-primary font-bold text-xs py-2.5 px-3 rounded-lg flex items-center justify-center gap-1.5 active:scale-[0.98] transition-all shadow-sm cursor-pointer"
             >
               <span className="material-symbols-outlined text-[18px]">check</span>
-              Accept &amp; DL
+              Accept &amp; Print
             </button>
             <button
               onClick={(e) => handleAction('cancelled', e)}
@@ -157,7 +198,9 @@ const OrderCard = ({ order, colType, onStatusUpdate, onPrint, onOpenModal }) => 
           <>
             <button
               onClick={handlePrintClick}
-              className="bg-surface-container border border-glass-edge/40 text-primary px-3 py-2 rounded-lg text-xs font-bold hover:bg-surface-variant active:scale-[0.98] transition-all flex items-center gap-1 cursor-pointer"
+              disabled={Boolean(order.files_deleted)}
+              className="bg-surface-container border border-glass-edge/40 text-primary px-3 py-2 rounded-lg text-xs font-bold hover:bg-surface-variant active:scale-[0.98] transition-all flex items-center gap-1 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+              title={order.files_deleted ? "Document files have already been permanently erased per privacy policy" : "Print document"}
             >
               <span className="material-symbols-outlined text-[16px]">print</span>
               Print
@@ -173,13 +216,26 @@ const OrderCard = ({ order, colType, onStatusUpdate, onPrint, onOpenModal }) => 
         )}
 
         {colType === 'ready' && (
-          <button
-            onClick={(e) => handleAction('collected', e)}
-            className="flex-1 bg-primary hover:bg-primary/90 text-on-primary font-bold text-xs py-2 px-3 rounded-lg flex items-center justify-center gap-1.5 active:scale-[0.98] transition-all shadow-sm cursor-pointer"
-          >
-            <span className="material-symbols-outlined text-[18px]">how_to_reg</span>
-            Handed to Customer
-          </button>
+          <div className="flex items-center gap-2 w-full">
+            <button
+              type="button"
+              onClick={handlePrintClick}
+              disabled={Boolean(order.files_deleted)}
+              className="bg-surface-container border border-glass-edge/40 text-primary px-3 py-2 rounded-lg text-xs font-bold hover:bg-surface-variant active:scale-[0.98] transition-all flex items-center gap-1 cursor-pointer shrink-0"
+              title="Reprint document in case of paper jam, smudge, or error"
+            >
+              <span className="material-symbols-outlined text-[16px]">print</span>
+              Reprint
+            </button>
+            <button
+              type="button"
+              onClick={(e) => handleAction('collected', e)}
+              className="flex-1 bg-primary hover:bg-primary/90 text-on-primary font-bold text-xs py-2 px-3 rounded-lg flex items-center justify-center gap-1.5 active:scale-[0.98] transition-all shadow-sm cursor-pointer"
+            >
+              <span className="material-symbols-outlined text-[18px]">how_to_reg</span>
+              Handed to Customer
+            </button>
+          </div>
         )}
       </div>
     </div>

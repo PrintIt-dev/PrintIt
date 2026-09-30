@@ -541,7 +541,10 @@ router.patch('/orders/:id/status', async (req, res) => {
                 type = 'order_accepted';
             } else if (status === 'ready') {
                 title = 'Order Ready! 🎉';
-                body = `Your order #${id.substring(0, 8)} is ready for pickup at the shop.`;
+                const isCod = updateResult.rows[0].payment_method === 'COD' || (updateResult.rows[0].payment_id && updateResult.rows[0].payment_id.startsWith('COD-'));
+                body = isCod 
+                    ? `Your order #${id.substring(0, 8)} is ready for pickup. Please pay ₹${updateResult.rows[0].amount_total} to the shopkeeper when collecting your prints.`
+                    : `Your order #${id.substring(0, 8)} is ready for pickup at the shop.`;
                 type = 'order_ready';
             } else if (status === 'collected') {
                 title = 'Order Delivered ✅';

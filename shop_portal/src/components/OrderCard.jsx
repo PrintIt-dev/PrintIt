@@ -104,16 +104,27 @@ const OrderCard = ({ order, colType, onStatusUpdate, onPrint, onOpenModal, onRev
             <span className="text-[11px] text-on-surface-variant/70 font-medium">Total</span>
             {order.payment_status && (
               <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wider ${
-                order.payment_status === 'captured' 
-                  ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30' 
-                  : 'bg-amber-500/15 text-amber-400 border border-amber-500/30'
+                (order.payment_method === 'COD' || order.payment_id?.startsWith('COD-') || opts.payment_method === 'COD')
+                  ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+                  : order.payment_status === 'captured' 
+                    ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30' 
+                    : 'bg-amber-500/15 text-amber-400 border border-amber-500/30'
               }`}>
-                {order.payment_status === 'captured' ? 'Paid' : 'Unpaid'}
+                {(order.payment_method === 'COD' || order.payment_id?.startsWith('COD-') || opts.payment_method === 'COD')
+                  ? 'Pay at Shop'
+                  : (order.payment_status === 'captured' ? 'Paid' : 'Unpaid')}
               </span>
             )}
           </div>
         </div>
       </div>
+
+      {(order.payment_method === 'COD' || order.payment_id?.startsWith('COD-') || opts.payment_method === 'COD') && (
+        <div className="mb-3 text-[11px] text-amber-300 font-medium bg-amber-500/10 px-2.5 py-1 rounded-md border border-amber-500/20 flex items-center gap-1.5">
+          <span className="material-symbols-outlined text-[14px] text-amber-400">storefront</span>
+          <span>Pay at Shop: Collect ₹{order.amount_total} at pickup</span>
+        </div>
+      )}
 
       {/* Divider */}
       <div className="h-px w-full bg-glass-edge/20 mb-4"></div>
