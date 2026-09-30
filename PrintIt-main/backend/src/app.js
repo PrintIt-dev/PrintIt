@@ -18,6 +18,7 @@ const { setupPrintingModeDb } = require('./utils/setupPrintingModeDb');
 const { setupOrdersAndSequencesDb } = require('./utils/setupOrdersAndSequencesDb');
 const { startCleanupJob } = require('./utils/firebaseCleanup');
 const { correlationIdMiddleware, errorHandler } = require('./middleware/errorHandler');
+const { startKeepAlive, stopKeepAlive } = require('./utils/keepAlive');
 
 // Connect to DB immediately after import
 pool.connect()
@@ -36,6 +37,16 @@ const app = express();
 
 // Trust reverse proxy headers (Render, Cloudflare, load balancers)
 app.set('trust proxy', 1);
+
+// Enforce HTTPS in production environments
+if (process.env.NODE_ENV === 'production') {
+  app.use((req, res, next) => {
+    if (req.headers['x-forwarded-proto'] && req.headers['x-forwarded-proto'] !== 'https') {
+      return res.redirect(301, `https://${req.headers.host}${req.url}`);
+    }
+    next();
+  });
+}
 
 // Attach correlation ID to every incoming request
 app.use(correlationIdMiddleware);
@@ -130,6 +141,11 @@ app.use(cors(corsOptions));
 
 app.use(express.json({ limit: '10mb' }));
 
+// Lightweight health check endpoint for Keep-Alive and uptime monitoring (zero DB / zero auth)
+app.get('/healthz', (req, res) => {
+    res.status(200).json({ ok: true, timestamp: Date.now() });
+});
+
 // Serve static assets with secure caching
 const publicPath = path.join(__dirname, '../public');
 app.use(express.static(publicPath, {
@@ -157,9 +173,17 @@ app.use(errorHandler);
 // Start server
 if (require.main === module) {
   const PORT = process.env.PORT || 3000;
-  app.listen(PORT, '0.0.0.0', () => {
+  const server = app.listen(PORT, '0.0.0.0', () => {
     console.log(`Server is running on port ${PORT} [Env: ${process.env.NODE_ENV || 'production'}]`);
+    startKeepAlive();
   });
+
+  const shutdown = () => {
+    stopKeepAlive();
+    server.close(() => process.exit(0));
+  };
+  process.on('SIGTERM', shutdown);
+  process.on('SIGINT', shutdown);
 }
 
 module.exports = app;

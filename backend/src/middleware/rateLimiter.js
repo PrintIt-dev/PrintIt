@@ -9,7 +9,7 @@ const apiLimiter = rateLimit({
     standardHeaders: true,
     legacyHeaders: false,
     validate: { xForwardedForHeader: false, default: true },
-    skip: (req) => req.path === '/health' || req.path === '/test',
+    skip: (req) => req.path === '/health' || req.path === '/healthz' || req.path === '/test',
     message: { 
         error: 'Too Many Requests', 
         message: 'Too many requests from this IP. Please try again later.' 
