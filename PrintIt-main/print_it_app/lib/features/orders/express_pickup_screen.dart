@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -37,6 +38,61 @@ class _ExpressPickupScreenState extends ConsumerState<ExpressPickupScreen> with 
   void dispose() {
     _glowController.dispose();
     super.dispose();
+  }
+
+  void _showScheduleComingSoonDialog(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: isDark ? const Color(0xFF0F172A) : Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        icon: Container(
+          width: 52,
+          height: 52,
+          decoration: BoxDecoration(
+            color: const Color(0xFF0284C7).withValues(alpha: 0.12),
+            shape: BoxShape.circle,
+          ),
+          child: const Icon(Icons.schedule, color: Color(0xFF0284C7), size: 28),
+        ),
+        title: Text(
+          'Coming Soon',
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            color: Theme.of(context).colorScheme.onSurface,
+            fontWeight: FontWeight.bold,
+            fontSize: 19,
+          ),
+        ),
+        content: Text(
+          'Scheduled printing will be available soon.',
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+            fontSize: 14,
+            height: 1.4,
+          ),
+        ),
+        actionsAlignment: MainAxisAlignment.center,
+        actions: [
+          SizedBox(
+            width: double.infinity,
+            height: 46,
+            child: ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF0284C7),
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                elevation: 0,
+              ),
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Got it', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15)),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _pickFiles() async {
@@ -86,12 +142,27 @@ class _ExpressPickupScreenState extends ConsumerState<ExpressPickupScreen> with 
     ref.read(orderProvider.notifier).removeFileEntry(index);
   }
 
+  /// Returns a human-readable ETA string based on the actual total page count.
+  /// Formula: 2 min base + 0.5 min per printed sheet, rounded to nearest minute.
+  String _computeEta(OrderState orderState) {
+    final totalSheets = orderState.totalSheets;
+    if (totalSheets <= 0 || orderState.files.isEmpty) {
+      return '5–10 mins'; // sensible default when no files loaded yet
+    }
+    final minutes = (2 + totalSheets * 0.5).round().clamp(2, 999);
+    if (minutes < 60) return '~$minutes mins';
+    final h = minutes ~/ 60;
+    final m = minutes % 60;
+    return m > 0 ? '~${h}h ${m}m' : '~${h}h';
+  }
+
   @override
   Widget build(BuildContext context) {
     final orderState = ref.watch(orderProvider);
     final files = orderState.files;
     final totalDocs = files.length;
     final totalPrice = totalDocs * 5.00;
+    final etaText = _computeEta(orderState);
 
     return Scaffold(
       backgroundColor: const Color(0xFF051424),
@@ -190,30 +261,49 @@ class _ExpressPickupScreenState extends ConsumerState<ExpressPickupScreen> with 
                       Expanded(
                         child: GestureDetector(
                           onTap: () {
-                            setState(() => _isExpressMode = false);
-                            ref.read(orderProvider.notifier).setPickupType('scheduled');
+                            HapticFeedback.lightImpact();
+                            _showScheduleComingSoonDialog(context);
                           },
                           child: Container(
                             padding: const EdgeInsets.symmetric(vertical: 12),
                             decoration: BoxDecoration(
-                              color: !_isExpressMode ? const Color(0xFF22D3EE) : Colors.transparent,
+                              color: Colors.transparent,
                               borderRadius: BorderRadius.circular(8),
                             ),
                             alignment: Alignment.center,
                             child: Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
-                                Icon(
+                                const Icon(
                                   Icons.calendar_today,
-                                  color: !_isExpressMode ? const Color(0xFF005763) : const Color(0xFFBBC9CD),
-                                  size: 16,
+                                  color: Color(0xFFBBC9CD),
+                                  size: 15,
                                 ),
-                                const SizedBox(width: 8),
-                                Text(
-                                  'Scheduled',
+                                const SizedBox(width: 6),
+                                const Text(
+                                  'Schedule Order',
                                   style: TextStyle(
-                                    color: !_isExpressMode ? const Color(0xFF005763) : const Color(0xFFBBC9CD),
+                                    color: Color(0xFFBBC9CD),
                                     fontWeight: FontWeight.w600,
+                                    fontSize: 13,
+                                  ),
+                                ),
+                                const SizedBox(width: 5),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFF0284C7).withValues(alpha: 0.15),
+                                    borderRadius: BorderRadius.circular(6),
+                                    border: Border.all(color: const Color(0xFF0284C7).withValues(alpha: 0.3)),
+                                  ),
+                                  child: const Text(
+                                    'Soon',
+                                    style: TextStyle(
+                                      color: Color(0xFF0284C7),
+                                      fontSize: 9,
+                                      fontWeight: FontWeight.bold,
+                                      letterSpacing: 0.2,
+                                    ),
                                   ),
                                 ),
                               ],
@@ -272,9 +362,9 @@ class _ExpressPickupScreenState extends ConsumerState<ExpressPickupScreen> with 
                                     ),
                                   ),
                                   const SizedBox(height: 2),
-                                  const Text(
-                                    '5-10 Minutes',
-                                    style: TextStyle(
+                                  Text(
+                                    etaText,
+                                    style: const TextStyle(
                                       color: Color(0xFFD4E4FA),
                                       fontSize: 18,
                                       fontWeight: FontWeight.w600,
@@ -571,12 +661,7 @@ class _ExpressPickupScreenState extends ConsumerState<ExpressPickupScreen> with 
                             elevation: 0,
                           ),
                           onPressed: files.isEmpty ? null : () {
-                            if (!_isExpressMode && ref.read(orderProvider).pickupTime == null) {
-                               // Open a time picker or route to schedule pickup time selector
-                               context.push('/schedule-pickup');
-                            } else {
-                               context.push('/select-shop');
-                            }
+                            context.push('/select-shop');
                           },
                           child: Row(
                             mainAxisAlignment: MainAxisAlignment.center,

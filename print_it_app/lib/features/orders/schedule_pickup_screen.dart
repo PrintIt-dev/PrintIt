@@ -30,6 +30,14 @@ class _SchedulePickupScreenState extends ConsumerState<SchedulePickupScreen> wit
   @override
   void initState() {
     super.initState();
+    // Ensure pickup type remains express while scheduling is temporarily disabled
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (ref.read(orderProvider).pickupType == 'scheduled') {
+        ref.read(orderProvider.notifier).setPickupType('express');
+        ref.read(orderProvider.notifier).setPickupTime(null);
+      }
+    });
+
     final orderNotifier = ref.read(orderProvider.notifier);
     if (ref.read(orderProvider).files.isEmpty) {
       orderNotifier.addDemoFileIfEmpty();
@@ -51,6 +59,61 @@ class _SchedulePickupScreenState extends ConsumerState<SchedulePickupScreen> wit
     } else {
       _selectedDate = now;
     }
+  }
+
+  void _showScheduleComingSoonDialog(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: isDark ? const Color(0xFF0F172A) : Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        icon: Container(
+          width: 52,
+          height: 52,
+          decoration: BoxDecoration(
+            color: const Color(0xFF0284C7).withValues(alpha: 0.12),
+            shape: BoxShape.circle,
+          ),
+          child: const Icon(Icons.schedule, color: Color(0xFF0284C7), size: 28),
+        ),
+        title: Text(
+          'Coming Soon',
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            color: Theme.of(context).colorScheme.onSurface,
+            fontWeight: FontWeight.bold,
+            fontSize: 19,
+          ),
+        ),
+        content: Text(
+          'Scheduled printing will be available soon.',
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+            fontSize: 14,
+            height: 1.4,
+          ),
+        ),
+        actionsAlignment: MainAxisAlignment.center,
+        actions: [
+          SizedBox(
+            width: double.infinity,
+            height: 46,
+            child: ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF0284C7),
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                elevation: 0,
+              ),
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Got it', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15)),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -268,28 +331,19 @@ class _SchedulePickupScreenState extends ConsumerState<SchedulePickupScreen> wit
                               ),
                             ),
                           ),
-                          // Scheduled Tab
+                          // Scheduled Tab (Temporarily disabled; clicking shows Coming Soon)
                           Expanded(
                             child: GestureDetector(
                               onTap: () {
                                 HapticFeedback.selectionClick();
-                                ref.read(orderProvider.notifier).setPickupType('scheduled');
+                                _showScheduleComingSoonDialog(context);
                               },
                               child: AnimatedContainer(
                                 duration: const Duration(milliseconds: 180),
                                 padding: const EdgeInsets.symmetric(vertical: 10),
                                 decoration: BoxDecoration(
-                                  color: isScheduled ? const Color(0xFF0284C7) : Colors.transparent,
+                                  color: Colors.transparent,
                                   borderRadius: BorderRadius.circular(16),
-                                  boxShadow: isScheduled
-                                      ? [
-                                          BoxShadow(
-                                            color: const Color(0xFF0284C7).withValues(alpha: 0.35),
-                                            blurRadius: 8,
-                                            offset: const Offset(0, 2),
-                                          ),
-                                        ]
-                                      : null,
                                 ),
                                 alignment: Alignment.center,
                                 child: Row(
@@ -297,20 +351,34 @@ class _SchedulePickupScreenState extends ConsumerState<SchedulePickupScreen> wit
                                   children: [
                                     Icon(
                                       Icons.calendar_today_outlined,
-                                      color: isScheduled
-                                          ? Colors.white
-                                          : (isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B)),
-                                      size: 15,
+                                      color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+                                      size: 14,
                                     ),
-                                    const SizedBox(width: 6),
+                                    const SizedBox(width: 5),
                                     Text(
-                                      'Scheduled',
+                                      'Schedule Order',
                                       style: TextStyle(
-                                        color: isScheduled
-                                            ? Colors.white
-                                            : (isDark ? const Color(0xFFE2E8F0) : const Color(0xFF0F172A)),
-                                        fontSize: 13,
-                                        fontWeight: isScheduled ? FontWeight.w600 : FontWeight.w400,
+                                        color: isDark ? const Color(0xFFE2E8F0) : const Color(0xFF0F172A),
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 5),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFF0284C7).withValues(alpha: 0.15),
+                                        borderRadius: BorderRadius.circular(6),
+                                        border: Border.all(color: const Color(0xFF0284C7).withValues(alpha: 0.3)),
+                                      ),
+                                      child: const Text(
+                                        'Soon',
+                                        style: TextStyle(
+                                          color: Color(0xFF0284C7),
+                                          fontSize: 9,
+                                          fontWeight: FontWeight.bold,
+                                          letterSpacing: 0.2,
+                                        ),
                                       ),
                                     ),
                                   ],
