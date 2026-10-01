@@ -422,17 +422,16 @@ class OrderNotifier extends Notifier<OrderState> {
       totalSubtotal = _calculateSingleFileSubtotal();
     }
 
-    double platformFee = double.parse((totalSubtotal * 0.03).toStringAsFixed(2)); // 3% our fee
-    double amountForRazorpay = totalSubtotal + platformFee;
-    double razorpayFee = double.parse((amountForRazorpay * 0.02).toStringAsFixed(2)); // 2% razorpay fee
-    double gst = double.parse((razorpayFee * 0.18).toStringAsFixed(2)); // 18% GST on razorpay fee
+    double platformFee = 0.0;
+    double razorpayFee = 0.0;
+    double gst = 0.0;
     
     state = state.copyWith(
       subtotal: totalSubtotal,
       gst: gst,
       platformFee: platformFee,
       razorpayFee: razorpayFee,
-      amountTotal: double.parse((totalSubtotal + platformFee + razorpayFee + gst).toStringAsFixed(2)),
+      amountTotal: double.parse(totalSubtotal.toStringAsFixed(2)),
     );
   }
 
