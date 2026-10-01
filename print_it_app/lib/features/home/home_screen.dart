@@ -1073,7 +1073,7 @@ class _LiveOrderPillState extends State<_LiveOrderPill>
         accentColor = const Color(0xFF10B981); // Emerald
         statusIcon = Icons.check_circle_rounded;
         title = 'Ready for Pickup';
-        subtitle = 'Order is ready • Tap for QR code';
+        subtitle = 'Order is ready • Tap to track';
         break;
       case 'processing':
       default:
