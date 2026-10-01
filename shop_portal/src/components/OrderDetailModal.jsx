@@ -274,7 +274,13 @@ const OrderDetailModal = ({ order, onClose, onStatusUpdate, onPrint, onReviewAnd
                 <div 
                   className={`bg-white rounded-md shadow-[0_6px_24px_rgba(0,0,0,0.18)] border border-slate-300 relative overflow-hidden transition-all flex flex-col ${
                     isLandscape ? 'w-[280px] h-[198px]' : 'w-[200px] h-[282px]'
-                  }`}
+                  } ${fileUrls[0] ? 'cursor-pointer hover:ring-2 hover:ring-primary/50' : ''}`}
+                  onClick={() => {
+                    if (fileUrls[0]) {
+                      window.open(fileUrls[0], '_blank');
+                    }
+                  }}
+                  title={fileUrls[0] ? "Click to view full document in new tab" : "Sheet Output Preview"}
                   style={{
                     boxShadow: '0 8px 30px rgba(0, 0, 0, 0.16), 0 2px 8px rgba(0, 0, 0, 0.08)'
                   }}
@@ -300,18 +306,29 @@ const OrderDetailModal = ({ order, onClose, onStatusUpdate, onPrint, onReviewAnd
                           <img 
                             src={b.url}
                             alt={b.file.name}
-                            className="w-full h-full object-contain pointer-events-none"
+                            className="w-full h-full object-contain pointer-events-none select-none"
                             style={{ filter: isBw ? 'grayscale(100%) contrast(108%)' : 'none' }}
+                            onError={(e) => {
+                              if (!e.currentTarget.dataset.retried) {
+                                e.currentTarget.dataset.retried = 'true';
+                                e.currentTarget.src = `${api.defaults.baseURL}/shop/orders/${order.order_id}/files/${b.fileIndex}/proxy`;
+                              }
+                            }}
                           />
                         ) : b.url && !b.isImage ? (
                           <div 
-                            className="w-full h-full flex flex-col items-center justify-center p-1 text-center bg-slate-50"
+                            className="w-full h-full flex flex-col items-center justify-center p-0.5 text-center bg-white relative overflow-hidden"
                             style={{ filter: isBw ? 'grayscale(100%)' : 'none' }}
                           >
-                            <span className="material-symbols-outlined text-primary text-xl">picture_as_pdf</span>
-                            <span className="text-[8px] font-semibold text-slate-800 line-clamp-1 max-w-[80px]">
-                              {b.file.name}
-                            </span>
+                            <iframe
+                              src={`${b.url}#toolbar=0&navpanes=0&scrollbar=0`}
+                              title={b.file.name}
+                              className="w-full h-full border-0 pointer-events-none"
+                            />
+                            <div className="absolute bottom-0.5 left-0.5 right-0.5 bg-black/75 backdrop-blur-sm text-white rounded px-1 py-0.5 text-[7px] font-medium truncate pointer-events-none flex items-center justify-center gap-1 z-10">
+                              <span className="material-symbols-outlined text-[9px] text-primary">picture_as_pdf</span>
+                              <span className="truncate">{b.file.name}</span>
+                            </div>
                           </div>
                         ) : (
                           <div 
@@ -512,10 +529,24 @@ const OrderDetailModal = ({ order, onClose, onStatusUpdate, onPrint, onReviewAnd
                         </div>
 
                         <div className="flex items-center gap-1.5 shrink-0">
-                          {fileUrls[idx] && !order.files_deleted && (
+                          {!order.files_deleted && (
                             <button
                               type="button"
-                              onClick={() => window.open(fileUrls[idx], '_blank')}
+                              onClick={async () => {
+                                if (fileUrls[idx]) {
+                                  window.open(fileUrls[idx], '_blank');
+                                } else {
+                                  try {
+                                    const res = await api.get(`/shop/orders/${order.order_id}/files/${idx}/download-url`);
+                                    if (res.data?.download_url) {
+                                      setFileUrls(prev => ({ ...prev, [idx]: res.data.download_url }));
+                                      window.open(res.data.download_url, '_blank');
+                                    }
+                                  } catch (err) {
+                                    console.error('Failed to get download URL:', err);
+                                  }
+                                }
+                              }}
                               className="px-2.5 py-1 bg-surface-bright hover:bg-surface-variant text-on-surface border border-outline-variant font-medium rounded text-[11px] transition-colors flex items-center gap-1 cursor-pointer"
                               title="Open original file"
                             >

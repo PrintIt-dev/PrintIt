@@ -5,10 +5,40 @@ const auth = require('../middleware/auth');
 const shopCheck = require('../middleware/shopCheck');
 const { getMessaging } = require('../config/firebase');
 const { deleteOrderFilesImmediately } = require('../utils/firebaseCleanup');
+const { addClient, removeClient } = require('../services/sseService');
 
 // All routes in this router require authentication and shop verification
 router.use(auth);
 router.use(shopCheck);
+
+/**
+ * @route   GET /api/shop/queue/stream
+ * @desc    SSE stream for real-time live queue updates
+ * @access  Private (Shop Owner Only)
+ */
+router.get('/queue/stream', (req, res) => {
+    const shopId = req.shop_id;
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.setHeader('X-Accel-Buffering', 'no'); // Disable Nginx buffering
+    res.flushHeaders();
+
+    // Send initial heartbeat
+    res.write(': connected\n\n');
+
+    // Keep-alive ping every 25s
+    const heartbeat = setInterval(() => {
+        try { res.write(': ping\n\n'); } catch (_) { clearInterval(heartbeat); }
+    }, 25000);
+
+    addClient(shopId, res);
+
+    req.on('close', () => {
+        clearInterval(heartbeat);
+        removeClient(shopId, res);
+    });
+});
 
 /**
  * @route   GET /api/shop/orders
@@ -263,7 +293,14 @@ router.get('/orders/:id/files/:file_index/download-url', async (req, res) => {
             : rawFile;
 
         const rawUrl = fileInfo && (fileInfo.s3_key || fileInfo.url);
-        const publicId = fileInfo && fileInfo.public_id;
+        let storagePath = (fileInfo && (fileInfo.public_id || fileInfo.storage_path)) || '';
+        if (!storagePath && rawUrl && rawUrl.startsWith('gs://')) {
+            storagePath = rawUrl.replace(/^gs:\/\/[^/]+\//, '');
+        } else if (!storagePath && rawUrl && rawUrl.includes('/o/')) {
+            try {
+                storagePath = decodeURIComponent(rawUrl.split('/o/')[1].split('?')[0]);
+            } catch (e) {}
+        }
         
         const rawOriginalName = (fileInfo && fileInfo.original_name) || 'document.pdf';
         const extMatch = rawOriginalName.match(/\.[0-9a-z]+$/i);
@@ -271,31 +308,51 @@ router.get('/orders/:id/files/:file_index/download-url', async (req, res) => {
         const shortId = id.split('-')[0];
         const originalName = files.length > 1 ? `${shortId}_${index + 1}${ext}` : `${shortId}${ext}`;
 
-        if (!rawUrl) {
-            console.error('[download-url] No URL found for file at specified index');
+        if (!rawUrl && !storagePath) {
+            console.error('[download-url] No URL or storage path found for file at specified index');
             return res.status(404).json({ error: 'File URL not found' });
         }
 
-        // Try to generate a Firebase signed URL (works for private buckets)
-        const isFirebaseUrl = rawUrl.includes('firebasestorage.googleapis.com') || rawUrl.includes('.appspot.com');
-        let downloadUrl = rawUrl;
+        // Check if file is stored in Firebase Storage (gs://, firebasestorage.app, .appspot.com, or has storagePath)
+        const isFirebase = Boolean(
+            storagePath ||
+            (rawUrl && (
+                rawUrl.startsWith('gs://') ||
+                rawUrl.includes('firebasestorage') ||
+                rawUrl.includes('.appspot.com')
+            ))
+        );
+        let downloadUrl = null;
 
-        if (isFirebaseUrl && publicId) {
+        if (isFirebase && storagePath) {
             try {
                 const { getStorage } = require('../config/firebase');
                 const bucket = getStorage().bucket();
-                const fileRef = bucket.file(publicId);
+                const fileRef = bucket.file(storagePath);
                 const isSecure = order.print_mode === 'secure';
-                const ttlMs = isSecure ? (15 * 60 * 1000) : (30 * 60 * 1000); // 15-min TTL for secure mode
+                const ttlMs = isSecure ? (15 * 60 * 1000) : (60 * 60 * 1000); // 1 hour TTL
                 const [signedUrl] = await fileRef.getSignedUrl({
                     action: 'read',
                     expires: Date.now() + ttlMs,
+                    responseDisposition: `inline; filename="${encodeURIComponent(originalName)}"`,
                 });
                 downloadUrl = signedUrl;
             } catch (signErr) {
-                console.warn('[download-url] Signed URL generation failed, falling back to storage URL');
-                // Fall back to the raw Firebase URL (works if bucket is public)
+                console.warn('[download-url] Signed URL generation failed, falling back to public storage URL:', signErr.message);
+                const bucketName = process.env.FIREBASE_STORAGE_BUCKET || 'printit-4d823.firebasestorage.app';
+                downloadUrl = `https://firebasestorage.googleapis.com/v0/b/${bucketName}/o/${encodeURIComponent(storagePath)}?alt=media`;
             }
+        }
+
+        if (!downloadUrl) {
+            downloadUrl = rawUrl;
+        }
+
+        // Never send raw gs:// URIs to the browser as browsers cannot resolve or load them
+        if (downloadUrl && downloadUrl.startsWith('gs://')) {
+            const cleanPath = downloadUrl.replace(/^gs:\/\/[^/]+\//, '');
+            const bucketName = process.env.FIREBASE_STORAGE_BUCKET || 'printit-4d823.firebasestorage.app';
+            downloadUrl = `https://firebasestorage.googleapis.com/v0/b/${bucketName}/o/${encodeURIComponent(cleanPath)}?alt=media`;
         }
 
         return res.json({ download_url: downloadUrl, original_name: originalName });
@@ -316,7 +373,6 @@ router.get('/orders/:id/files/download-all', async (req, res) => {
         error: 'Bulk file downloads are permanently disabled across all orders to protect customer privacy and prevent unauthorized document retention.'
     });
 });
-
 
 /**
  * @route   GET /api/shop/orders/:id/files/:file_index/proxy
@@ -366,7 +422,14 @@ router.get('/orders/:id/files/:file_index/proxy', async (req, res) => {
             : rawFile;
 
         const fileUrl = fileInfo.s3_key || fileInfo.url;
-        const filePublicId = fileInfo.public_id;
+        let filePublicId = (fileInfo && (fileInfo.public_id || fileInfo.storage_path)) || '';
+        if (!filePublicId && fileUrl && fileUrl.startsWith('gs://')) {
+            filePublicId = fileUrl.replace(/^gs:\/\/[^/]+\//, '');
+        } else if (!filePublicId && fileUrl && fileUrl.includes('/o/')) {
+            try {
+                filePublicId = decodeURIComponent(fileUrl.split('/o/')[1].split('?')[0]);
+            } catch (e) {}
+        }
         
         const rawOriginalName = fileInfo.original_name || 'document.pdf';
         const extMatch = rawOriginalName.match(/\.[0-9a-z]+$/i);
@@ -374,13 +437,13 @@ router.get('/orders/:id/files/:file_index/proxy', async (req, res) => {
         const shortId = id.split('-')[0];
         const originalName = files.length > 1 ? `${shortId}_${fileIdx + 1}${ext}` : `${shortId}${ext}`;
 
-        if (!fileUrl) {
+        if (!fileUrl && !filePublicId) {
             console.error(`[proxy] No file URL resolved for index ${fileIdx}`);
             return res.status(404).json({ error: 'File URL not found' });
         }
 
-        const applySecurityHeaders = (responseStream) => {
-            const contentType = responseStream.headers['content-type'] || 'application/octet-stream';
+        const applySecurityHeaders = (contentTypeHeader) => {
+            const contentType = contentTypeHeader || 'application/octet-stream';
             res.setHeader('Content-Type', contentType);
             res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(originalName)}"`);
             res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
@@ -393,7 +456,14 @@ router.get('/orders/:id/files/:file_index/proxy', async (req, res) => {
         // buckets). Fall back to direct https proxy if it's not a Firebase
         // Storage URL or if signing fails.
         // ---------------------------------------------------------------
-        const isFirebaseUrl = fileUrl.includes('firebasestorage.googleapis.com') || fileUrl.includes('.appspot.com');
+        const isFirebaseUrl = Boolean(
+            filePublicId ||
+            (fileUrl && (
+                fileUrl.startsWith('gs://') ||
+                fileUrl.includes('firebasestorage') ||
+                fileUrl.includes('.appspot.com')
+            ))
+        );
         
         if (isFirebaseUrl && filePublicId) {
             // Use Firebase Admin SDK to generate a short-lived signed URL
@@ -401,11 +471,12 @@ router.get('/orders/:id/files/:file_index/proxy', async (req, res) => {
                 const { getStorage } = require('../config/firebase');
                 const bucket = getStorage().bucket();
                 const fileRef = bucket.file(filePublicId);
-                const ttlMs = isSecure ? (15 * 60 * 1000) : (30 * 60 * 1000);
+                const ttlMs = isSecure ? (15 * 60 * 1000) : (60 * 60 * 1000);
 
                 const [signedUrl] = await fileRef.getSignedUrl({
                     action: 'read',
                     expires: Date.now() + ttlMs,
+                    responseDisposition: `inline; filename="${encodeURIComponent(originalName)}"`,
                 });
 
                 // Proxy via signed URL
@@ -415,7 +486,7 @@ router.get('/orders/:id/files/:file_index/proxy', async (req, res) => {
                         console.error('[proxy] Firebase signed URL returned HTTP error status:', response.statusCode);
                         return res.status(response.statusCode).send('Failed to fetch file');
                     }
-                    applySecurityHeaders(response);
+                    applySecurityHeaders(response.headers['content-type']);
                     response.pipe(res);
                 }).on('error', (err) => {
                     console.error('[proxy] Signed URL fetch error:', err.message);
@@ -428,17 +499,28 @@ router.get('/orders/:id/files/:file_index/proxy', async (req, res) => {
             }
         }
 
-        // Direct proxy (for public URLs or non-Firebase storage)
+        // Direct proxy (convert gs:// if needed)
+        let proxyFetchUrl = fileUrl;
+        if (proxyFetchUrl && proxyFetchUrl.startsWith('gs://')) {
+            const cleanPath = proxyFetchUrl.replace(/^gs:\/\/[^/]+\//, '');
+            const bucketName = process.env.FIREBASE_STORAGE_BUCKET || 'printit-4d823.firebasestorage.app';
+            proxyFetchUrl = `https://firebasestorage.googleapis.com/v0/b/${bucketName}/o/${encodeURIComponent(cleanPath)}?alt=media`;
+        }
+
+        if (!proxyFetchUrl) {
+            return res.status(404).json({ error: 'Unable to resolve file storage location' });
+        }
+
         const https = require('https');
         const http = require('http');
-        const httpClient = fileUrl.startsWith('https') ? https : http;
+        const httpClient = proxyFetchUrl.startsWith('https') ? https : http;
 
-        httpClient.get(fileUrl, (response) => {
+        httpClient.get(proxyFetchUrl, (response) => {
             if (response.statusCode !== 200) {
                 console.error('[proxy] Direct fetch returned non-200 HTTP status:', response.statusCode);
                 return res.status(response.statusCode).send('Failed to fetch file from storage');
             }
-            applySecurityHeaders(response);
+            applySecurityHeaders(response.headers['content-type']);
             response.pipe(res);
         }).on('error', (err) => {
             console.error('[proxy] Direct proxy error:', err.message);
