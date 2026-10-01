@@ -98,6 +98,13 @@ async function setupOrdersAndSequencesDb() {
                 ) THEN
                     ALTER TABLE orders ADD COLUMN payment_method VARCHAR(50) DEFAULT 'razorpay';
                 END IF;
+
+                IF NOT EXISTS (
+                    SELECT 1 FROM information_schema.columns 
+                    WHERE table_name = 'orders' AND column_name = 'queue_position'
+                ) THEN
+                    ALTER TABLE orders ADD COLUMN queue_position INTEGER;
+                END IF;
             END $$;
         `);
 
