@@ -7,6 +7,7 @@ const pool = require('../config/db');
 const { generateOrderId } = require('../utils/orderIdGenerator');
 const { calculatePrintSubtotal } = require('../utils/pricingCalculator');
 const { paymentLimiter } = require('../middleware/rateLimiter');
+const { broadcastShopQueueUpdate } = require('../services/sseService');
 
 router.use(paymentLimiter);
 
@@ -312,6 +313,12 @@ router.post('/guest/cod', async (req, res) => {
         );
 
         await client.query('COMMIT');
+
+        // Broadcast new order to shop's live queue
+        try {
+            broadcastShopQueueUpdate(shop_id, { type: 'NEW_ORDER', order: result.rows[0] });
+        } catch (_) {}
+
         return res.status(201).json({
             message: 'Pay at Shop order placed successfully',
             order: result.rows[0],
@@ -791,6 +798,12 @@ router.post('/cod', async (req, res) => {
         );
 
         await client.query('COMMIT');
+
+        // Broadcast new order to shop's live queue
+        try {
+            broadcastShopQueueUpdate(shop_id, { type: 'NEW_ORDER', order: result.rows[0] });
+        } catch (_) {}
+
         return res.status(201).json({
             message: 'Pay at Shop order placed successfully',
             order: result.rows[0]

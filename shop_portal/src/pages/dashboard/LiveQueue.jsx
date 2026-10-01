@@ -56,8 +56,35 @@ const LiveQueue = () => {
 
   useEffect(() => {
     fetchOrders(true);
-    const interval = setInterval(() => fetchOrders(), 10000); // 10s poll
-    return () => clearInterval(interval);
+    const interval = setInterval(() => fetchOrders(), 10000); // 10s poll fallback
+
+    // SSE real-time stream for instant new order delivery
+    const apiBase = import.meta.env.VITE_API_URL ||
+      (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+        ? `http://${window.location.hostname}:3000/api`
+        : 'https://printit-zaf4.onrender.com/api');
+    const token = localStorage.getItem('token');
+    let es = null;
+    if (token) {
+      // EventSource doesn't support custom headers — pass token as query param
+      es = new EventSource(`${apiBase}/shop/queue/stream?token=${encodeURIComponent(token)}`);
+      es.onmessage = (e) => {
+        try {
+          const payload = JSON.parse(e.data);
+          if (payload.type === 'NEW_ORDER' || payload.type === 'ORDER_UPDATE') {
+            fetchOrders();
+          }
+        } catch (_) {}
+      };
+      es.onerror = () => {
+        // Silent — polling will cover any missed events
+      };
+    }
+
+    return () => {
+      clearInterval(interval);
+      if (es) es.close();
+    };
   }, []);
 
   const handleApproveAndPrint = async (orderId, verifiedPrintOptions) => {

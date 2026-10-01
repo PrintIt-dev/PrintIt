@@ -5,11 +5,17 @@ const pool = require('../config/db');
 const auth = async (req, res, next) => {
     const authHeader = req.headers.authorization;
 
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    // SSE connections (EventSource) cannot set headers, so accept token as query param
+    const queryToken = req.query.token;
+    let token;
+
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+        token = authHeader.split(' ')[1];
+    } else if (queryToken) {
+        token = queryToken;
+    } else {
         return res.status(401).json({ error: 'Access denied. No token provided.' });
     }
-
-    const token = authHeader.split(' ')[1];
 
     try {
         const decoded = jwt.verify(token, process.env.JWT_SECRET);

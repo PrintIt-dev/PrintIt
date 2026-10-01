@@ -5,10 +5,40 @@ const auth = require('../middleware/auth');
 const shopCheck = require('../middleware/shopCheck');
 const { getMessaging } = require('../config/firebase');
 const { deleteOrderFilesImmediately } = require('../utils/firebaseCleanup');
+const { addClient, removeClient } = require('../services/sseService');
 
 // All routes in this router require authentication and shop verification
 router.use(auth);
 router.use(shopCheck);
+
+/**
+ * @route   GET /api/shop/queue/stream
+ * @desc    SSE stream for real-time live queue updates
+ * @access  Private (Shop Owner Only)
+ */
+router.get('/queue/stream', (req, res) => {
+    const shopId = req.shop_id;
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.setHeader('X-Accel-Buffering', 'no'); // Disable Nginx buffering
+    res.flushHeaders();
+
+    // Send initial heartbeat
+    res.write(': connected\n\n');
+
+    // Keep-alive ping every 25s
+    const heartbeat = setInterval(() => {
+        try { res.write(': ping\n\n'); } catch (_) { clearInterval(heartbeat); }
+    }, 25000);
+
+    addClient(shopId, res);
+
+    req.on('close', () => {
+        clearInterval(heartbeat);
+        removeClient(shopId, res);
+    });
+});
 
 /**
  * @route   GET /api/shop/orders
