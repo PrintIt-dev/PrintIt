@@ -3,6 +3,9 @@ import { useOutletContext } from 'react-router-dom';
 import api from '../../core/api';
 import OrderCard from '../../components/OrderCard';
 import OrderDetailModal from '../../components/OrderDetailModal';
+import PrintReviewModal from '../../components/PrintReviewModal';
+import NewPrintJobModal from '../../components/NewPrintJobModal';
+import { Link } from 'react-router-dom';
 
 const getPickupType = (order) => {
   if (!order) return 'express';
@@ -32,8 +35,11 @@ const LiveQueue = () => {
   const [lastUpdated, setLastUpdated] = useState(new Date());
   const [activeTab, setActiveTab] = useState('all'); // 'express' | 'scheduled' | 'all'
   const [selectedOrder, setSelectedOrder] = useState(null);
+  const [reviewOrder, setReviewOrder] = useState(null);
   const [showFilterMenu, setShowFilterMenu] = useState(false);
-  const [colorFilter, setColorFilter] = useState('all'); // 'all' | 'bw' | 'color'
+  const [colorFilter, setColorFilter] = useState('all');
+  const [agentDevice, setAgentDevice] = useState(null);
+  const [showNewJobModal, setShowNewJobModal] = useState(false); // 'all' | 'bw' | 'color'
 
   const fetchOrders = async (showLoader = false) => {
     if (showLoader) setIsLoading(true);
@@ -50,11 +56,51 @@ const LiveQueue = () => {
 
   useEffect(() => {
     fetchOrders(true);
-    const interval = setInterval(() => fetchOrders(), 10000); // 10s poll
-    return () => clearInterval(interval);
+    const interval = setInterval(() => fetchOrders(), 10000); // 10s poll fallback
+
+    // SSE real-time stream for instant new order delivery
+    const apiBase = import.meta.env.VITE_API_URL ||
+      (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+        ? `http://${window.location.hostname}:3000/api`
+        : 'https://printit-zaf4.onrender.com/api');
+    const token = localStorage.getItem('token');
+    let es = null;
+    if (token) {
+      // EventSource doesn't support custom headers — pass token as query param
+      es = new EventSource(`${apiBase}/shop/queue/stream?token=${encodeURIComponent(token)}`);
+      es.onmessage = (e) => {
+        try {
+          const payload = JSON.parse(e.data);
+          if (payload.type === 'NEW_ORDER' || payload.type === 'ORDER_UPDATE') {
+            fetchOrders();
+          }
+        } catch (_) {}
+      };
+      es.onerror = () => {
+        // Silent — polling will cover any missed events
+      };
+    }
+
+    return () => {
+      clearInterval(interval);
+      if (es) es.close();
+    };
   }, []);
 
-  const handleStatusUpdate = async (orderId, newStatus) => {
+  const handleApproveAndPrint = async (orderId, verifiedPrintOptions) => {
+    try {
+      await api.patch(`/shop/orders/${orderId}/status`, { 
+        status: 'processing',
+        print_options: verifiedPrintOptions
+      });
+      fetchOrders();
+    } catch (err) {
+      alert('Failed to approve and print: ' + err.message);
+      throw err;
+    }
+  };
+
+const handleStatusUpdate = async (orderId, newStatus) => {
     try {
       await api.patch(`/shop/orders/${orderId}/status`, { status: newStatus });
       fetchOrders();
@@ -63,46 +109,80 @@ const LiveQueue = () => {
     }
   };
 
-  const handlePrint = async (orderId, isDownload = false) => {
+  const handlePrint = async (orderId) => {
     try {
-      if (isDownload) {
-        const response = await api.get(`/shop/orders/${orderId}/files/0/proxy`, {
-          responseType: 'blob'
-        });
-        
-        const blob = new Blob([response.data]);
-        const blobUrl = window.URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.style.display = 'none';
-        a.href = blobUrl;
-        
-        let filename = `print_order_${orderId.split('-')[0]}.pdf`;
-        const contentDisposition = response.headers['content-disposition'];
-        if (contentDisposition) {
-          const match = contentDisposition.match(/filename="?([^"]+)"?/);
-          if (match && match[1]) filename = match[1];
+      const order = orders.find(o => o.order_id === orderId || o.id === orderId);
+      let isMultiGrid = false;
+      let hasMultipleFiles = false;
+      if (order) {
+        let opts = {};
+        try { opts = typeof order.print_options === 'string' ? JSON.parse(order.print_options) : (order.print_options || {}); } catch(e) {}
+        isMultiGrid = opts.multi_file_grid === true;
+        let files = order.files;
+        if (typeof files === 'string') {
+          try { files = JSON.parse(files); } catch(e) { files = []; }
         }
-        
-        a.download = filename;
-        document.body.appendChild(a);
-        a.click();
-        
-        window.URL.revokeObjectURL(blobUrl);
-        document.body.removeChild(a);
+        if (Array.isArray(files) && files.length > 1) {
+          hasMultipleFiles = true;
+        }
+      }
+
+      // Try dispatching to the linked desktop print agent first
+      await api.post(`/shop/orders/${orderId}/dispatch-to-agent`, { 
+        file_index: isMultiGrid ? 0 : (hasMultipleFiles ? 'all' : 0),
+        multi_file_grid: isMultiGrid
+      });
+      // Show a brief non-blocking confirmation
+      const toast = document.createElement('div');
+      toast.textContent = isMultiGrid 
+        ? '🖨️ Combined grid print job sent to agent' 
+        : (hasMultipleFiles ? '🖨️ Multi-document print jobs sent to agent' : '🖨️ Print job sent to agent');
+      toast.style.cssText = 'position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#1e293b;color:#e2e8f0;padding:10px 20px;border-radius:10px;font-size:13px;font-weight:600;z-index:9999;box-shadow:0 4px 20px rgba(0,0,0,0.4);border:1px solid rgba(255,255,255,0.08);';
+      document.body.appendChild(toast);
+      setTimeout(() => toast.remove(), 3000);
+    } catch (err) {
+      const status = err.response?.status;
+      const errMsg = err.response?.data?.error || err.message;
+
+      if (status === 410) {
+        // Files permanently erased — no fallback possible
+        alert('Document Permanently Erased (410):\n' + errMsg);
         return;
       }
 
-      const res = await api.get(`/shop/orders/${orderId}/files/0/download-url`);
-      const url = res.data.download_url;
-      const newWin = window.open(url, '_blank');
-      if (!newWin) {
-        alert('Popup blocked. Click ok to download directly.');
-        window.location.href = url;
+      if (status === 400 || status === 503) {
+        // Agent not paired or offline — fall back to browser tab with explanation
+        const reason = status === 400
+          ? 'No print agent is paired with this shop.'
+          : 'Print agent is currently offline.';
+        const useBrowser = window.confirm(
+          `⚠️ ${reason}\n\nFall back to opening the file in your browser instead?\n(Set up the Print Agent app on your shop PC to enable silent printing.)`
+        );
+        if (!useBrowser) return;
+        // Fallback: open in browser tab
+        try {
+          const res = await api.get(`/shop/orders/${orderId}/files/0/download-url`);
+          let url = res.data?.download_url;
+          if (url && url.startsWith('gs://')) {
+            const cleanPath = url.replace(/^gs:\/\/[^/]+\//, '');
+            url = `https://firebasestorage.googleapis.com/v0/b/printit-4d823.firebasestorage.app/o/${encodeURIComponent(cleanPath)}?alt=media`;
+          }
+          if (!url || (!url.startsWith('http://') && !url.startsWith('https://'))) {
+            const token = localStorage.getItem('token');
+            url = `${api.defaults.baseURL}/shop/orders/${orderId}/files/0/proxy${token ? `?token=${encodeURIComponent(token)}` : ''}`;
+          }
+          const newWin = window.open(url, '_blank');
+          if (!newWin) alert('Popup blocked. Please allow popups to open the print preview.');
+        } catch (fallbackErr) {
+          alert('Print failed: ' + (fallbackErr.response?.data?.error || fallbackErr.message));
+        }
+        return;
       }
-    } catch (err) {
-      alert('Print failed: ' + err.message);
+
+      alert('Print failed: ' + errMsg);
     }
   };
+
 
   // Filter orders by search, tabs, and color options
   const filteredOrders = orders.filter(order => {
@@ -197,6 +277,46 @@ const LiveQueue = () => {
             </button>
           </div>
 
+          {/* Agent Status Pill */}
+          <Link
+            to="/dashboard/agent"
+            className={`flex items-center gap-2 px-3 py-1.5 rounded-xl border text-xs font-bold transition-all hover:scale-[1.02] cursor-pointer ${
+              agentDevice?.status === 'PRINTING'
+                ? 'bg-blue-500/15 border-blue-500/30 text-blue-400'
+                : (agentDevice && ['ONLINE', 'READY'].includes(agentDevice.status))
+                ? 'bg-emerald-500/15 border-emerald-500/30 text-emerald-400'
+                : 'bg-amber-500/15 border-amber-500/30 text-amber-400'
+            }`}
+            title={agentDevice ? `Station: ${agentDevice.device_name || 'Counter'} • ${agentDevice.selected_printer || 'Auto'} • Click for settings` : 'Click to configure Print Agent'}
+          >
+            <span className={`w-2 h-2 rounded-full ${
+              agentDevice?.status === 'PRINTING'
+                ? 'bg-blue-400 animate-ping'
+                : (agentDevice && ['ONLINE', 'READY'].includes(agentDevice.status))
+                ? 'bg-emerald-400 animate-pulse'
+                : 'bg-amber-400'
+            }`}></span>
+            <span className="hidden sm:inline">
+              {agentDevice?.status === 'PRINTING'
+                ? 'Agent Printing...'
+                : (agentDevice && ['ONLINE', 'READY'].includes(agentDevice.status))
+                ? `Agent Ready (${(agentDevice.selected_printer || 'Auto').split(' ')[0]})`
+                : 'Agent Offline'}
+            </span>
+            <span className="sm:hidden">
+              {agentDevice?.status === 'PRINTING' ? 'Printing' : ((agentDevice && ['ONLINE', 'READY'].includes(agentDevice.status)) ? 'Ready' : 'Offline')}
+            </span>
+          </Link>
+
+          {/* + Walk-in Print Button */}
+          <button
+            onClick={() => setShowNewJobModal(true)}
+            className="flex items-center gap-1.5 px-3 sm:px-4 py-2 bg-primary text-on-primary font-bold text-xs rounded-xl hover:bg-primary/90 transition-all cursor-pointer shadow-sm shadow-primary/20 shrink-0"
+          >
+            <span className="material-symbols-outlined text-[17px]">add_circle</span>
+            <span>+ Walk-in Print</span>
+          </button>
+
           {/* Filter Button */}
           <div className="relative">
             <button 
@@ -250,11 +370,19 @@ const LiveQueue = () => {
       </div>
 
       {isLoading ? (
-        <div className="flex-1 flex items-center justify-center text-on-surface-variant py-20">
-          <div className="flex flex-col items-center gap-2">
-            <span className="material-symbols-outlined text-primary text-3xl animate-spin">autorenew</span>
-            <span className="text-sm">Loading Order Workflow...</span>
-          </div>
+        <div className="flex-1 grid grid-cols-1 md:grid-cols-3 gap-6 overflow-hidden pb-2 animate-pulse">
+          {[1, 2, 3].map((col) => (
+            <div key={col} className="flex flex-col bg-surface-container/70 rounded-2xl border border-glass-edge/30 overflow-hidden">
+              <div className="p-4 border-b border-glass-edge/20 bg-surface-container-low/80 flex justify-between items-center h-14">
+                <div className="h-4 w-28 bg-surface-container-highest/60 rounded"></div>
+                <div className="w-6 h-6 rounded-full bg-surface-container-highest/60"></div>
+              </div>
+              <div className="flex-1 p-4 flex flex-col gap-4">
+                <div className="h-32 bg-surface-container-highest/40 rounded-xl"></div>
+                <div className="h-32 bg-surface-container-highest/30 rounded-xl"></div>
+              </div>
+            </div>
+          ))}
         </div>
       ) : (
         /* Kanban Board Area - Fills desktop view height seamlessly */
@@ -292,6 +420,7 @@ const LiveQueue = () => {
                     onStatusUpdate={handleStatusUpdate}
                     onPrint={handlePrint}
                     onOpenModal={setSelectedOrder}
+                    onReviewAndAccept={setReviewOrder}
                   />
                 ))
               )}
@@ -331,6 +460,7 @@ const LiveQueue = () => {
                     onStatusUpdate={handleStatusUpdate}
                     onPrint={handlePrint}
                     onOpenModal={setSelectedOrder}
+                    onReviewAndAccept={setReviewOrder}
                   />
                 ))
               )}
@@ -378,6 +508,22 @@ const LiveQueue = () => {
         </div>
       )}
 
+      {/* Print Verification & Approval Modal */}
+      {showNewJobModal && (
+        <NewPrintJobModal
+          onClose={() => setShowNewJobModal(false)}
+          onJobCreated={() => fetchOrders(true)}
+        />
+      )}
+
+      {reviewOrder && (
+        <PrintReviewModal
+          order={reviewOrder}
+          onClose={() => setReviewOrder(null)}
+          onApprove={handleApproveAndPrint}
+        />
+      )}
+
       {/* Detail Modal */}
       {selectedOrder && (
         <OrderDetailModal
@@ -385,6 +531,10 @@ const LiveQueue = () => {
           onClose={() => setSelectedOrder(null)}
           onStatusUpdate={handleStatusUpdate}
           onPrint={handlePrint}
+          onReviewAndAccept={(order) => {
+            setSelectedOrder(null);
+            setReviewOrder(order);
+          }}
         />
       )}
     </div>

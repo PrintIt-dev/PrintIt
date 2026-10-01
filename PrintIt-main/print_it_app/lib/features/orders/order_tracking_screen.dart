@@ -593,7 +593,12 @@ class OrderTrackingScreen extends ConsumerWidget {
       final dio = ref.read(apiProvider);
       final res = await dio.get('/shop/orders/$orderId/files/$fileIndex/download-url');
       if (res.statusCode == 200 && res.data['download_url'] != null) {
-        final url = Uri.parse(res.data['download_url']);
+        String urlString = res.data['download_url'].toString();
+        if (urlString.startsWith('gs://')) {
+          final cleanPath = urlString.replaceFirst(RegExp(r'^gs://[^/]+/'), '');
+          urlString = 'https://firebasestorage.googleapis.com/v0/b/printit-4d823.firebasestorage.app/o/${Uri.encodeComponent(cleanPath)}?alt=media';
+        }
+        final url = Uri.parse(urlString);
         if (await canLaunchUrl(url)) {
           await launchUrl(url, mode: LaunchMode.externalApplication);
         } else {
@@ -615,7 +620,11 @@ class OrderTrackingScreen extends ConsumerWidget {
       final res = await dio.get('/shop/orders/$orderId/files/download-all');
       if (res.statusCode == 200 && res.data['urls'] != null) {
         final urls = List<String>.from(res.data['urls']);
-        for (final urlString in urls) {
+        for (var urlString in urls) {
+          if (urlString.startsWith('gs://')) {
+            final cleanPath = urlString.replaceFirst(RegExp(r'^gs://[^/]+/'), '');
+            urlString = 'https://firebasestorage.googleapis.com/v0/b/printit-4d823.firebasestorage.app/o/${Uri.encodeComponent(cleanPath)}?alt=media';
+          }
           final url = Uri.parse(urlString);
           if (await canLaunchUrl(url)) {
             await launchUrl(url, mode: LaunchMode.externalApplication);

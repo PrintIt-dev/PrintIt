@@ -80,6 +80,23 @@ const OrderDetailModal = ({ order, onClose, onStatusUpdate, onPrint, onReviewAnd
   const [activeSide, setActiveSide] = useState('front'); // 'front' | 'back'
   const [previewError, setPreviewError] = useState(false);
 
+  // Helper to ensure all preview URLs use a standard HTTP/HTTPS/data/blob scheme
+  const sanitizeUrl = (rawUrl, fileIdx) => {
+    const token = localStorage.getItem('token');
+    const proxyFallback = `${api.defaults.baseURL}/shop/orders/${order?.order_id}/files/${fileIdx ?? 0}/proxy${token ? `?token=${encodeURIComponent(token)}` : ''}`;
+    if (!rawUrl || typeof rawUrl !== 'string') {
+      return proxyFallback;
+    }
+    if (rawUrl.startsWith('gs://')) {
+      const cleanPath = rawUrl.replace(/^gs:\/\/[^/]+\//, '');
+      return `https://firebasestorage.googleapis.com/v0/b/printit-4d823.firebasestorage.app/o/${encodeURIComponent(cleanPath)}?alt=media`;
+    }
+    if (rawUrl.startsWith('http://') || rawUrl.startsWith('https://') || rawUrl.startsWith('blob:') || rawUrl.startsWith('data:')) {
+      return rawUrl;
+    }
+    return proxyFallback;
+  };
+
   useEffect(() => {
     let isMounted = true;
     const loadUrls = async () => {
@@ -89,10 +106,11 @@ const OrderDetailModal = ({ order, onClose, onStatusUpdate, onPrint, onReviewAnd
         try {
           const res = await api.get(`/shop/orders/${order.order_id}/files/${i}/download-url`);
           if (res.data?.download_url) {
-            urls[i] = res.data.download_url;
+            urls[i] = sanitizeUrl(res.data.download_url, i);
           }
         } catch (e) {
           console.warn(`Could not load preview URL for file ${i}:`, e.message);
+          urls[i] = sanitizeUrl(null, i);
         }
       }
       if (isMounted) {
@@ -135,7 +153,8 @@ const OrderDetailModal = ({ order, onClose, onStatusUpdate, onPrint, onReviewAnd
     // In multi-file grid, block 0 = file 0, block 1 = file 1, etc.
     const fileIdx = isMultiGrid ? (idx % files.length) : 0;
     const targetFile = files[fileIdx] || files[0] || { name: 'Document.pdf', pages: 1 };
-    const url = fileUrls[fileIdx];
+    const rawUrl = fileUrls[fileIdx];
+    const url = rawUrl ? sanitizeUrl(rawUrl, fileIdx) : null;
     return {
       index: idx,
       fileIndex: fileIdx,
@@ -276,8 +295,9 @@ const OrderDetailModal = ({ order, onClose, onStatusUpdate, onPrint, onReviewAnd
                     isLandscape ? 'w-[280px] h-[198px]' : 'w-[200px] h-[282px]'
                   } ${fileUrls[0] ? 'cursor-pointer hover:ring-2 hover:ring-primary/50' : ''}`}
                   onClick={() => {
-                    if (fileUrls[0]) {
-                      window.open(fileUrls[0], '_blank');
+                    const targetUrl = sanitizeUrl(fileUrls[0], 0);
+                    if (targetUrl) {
+                      window.open(targetUrl, '_blank');
                     }
                   }}
                   title={fileUrls[0] ? "Click to view full document in new tab" : "Sheet Output Preview"}
@@ -302,7 +322,7 @@ const OrderDetailModal = ({ order, onClose, onStatusUpdate, onPrint, onReviewAnd
                         key={b.index}
                         className="relative bg-slate-50 border border-slate-200 rounded flex items-center justify-center overflow-hidden"
                       >
-                        {b.url && b.isImage ? (
+                        {b.url && (b.url.startsWith('http://') || b.url.startsWith('https://') || b.url.startsWith('blob:') || b.url.startsWith('data:')) && b.isImage ? (
                           <img 
                             src={b.url}
                             alt={b.file.name}
@@ -311,11 +331,12 @@ const OrderDetailModal = ({ order, onClose, onStatusUpdate, onPrint, onReviewAnd
                             onError={(e) => {
                               if (!e.currentTarget.dataset.retried) {
                                 e.currentTarget.dataset.retried = 'true';
-                                e.currentTarget.src = `${api.defaults.baseURL}/shop/orders/${order.order_id}/files/${b.fileIndex}/proxy`;
+                                const token = localStorage.getItem('token');
+                                e.currentTarget.src = `${api.defaults.baseURL}/shop/orders/${order.order_id}/files/${b.fileIndex}/proxy${token ? `?token=${encodeURIComponent(token)}` : ''}`;
                               }
                             }}
                           />
-                        ) : b.url && !b.isImage ? (
+                        ) : b.url && (b.url.startsWith('http://') || b.url.startsWith('https://') || b.url.startsWith('blob:') || b.url.startsWith('data:')) && !b.isImage ? (
                           <div 
                             className="w-full h-full flex flex-col items-center justify-center p-0.5 text-center bg-white relative overflow-hidden"
                             style={{ filter: isBw ? 'grayscale(100%)' : 'none' }}
@@ -390,7 +411,10 @@ const OrderDetailModal = ({ order, onClose, onStatusUpdate, onPrint, onReviewAnd
               {fileUrls[0] && !order.files_deleted && (
                 <button
                   type="button"
-                  onClick={() => window.open(fileUrls[0], '_blank')}
+                  onClick={() => {
+                    const targetUrl = sanitizeUrl(fileUrls[0], 0);
+                    if (targetUrl) window.open(targetUrl, '_blank');
+                  }}
                   className="w-full mt-3 py-1.5 bg-primary/10 hover:bg-primary/20 text-primary border border-primary/30 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
                 >
                   <span className="material-symbols-outlined text-[15px]">open_in_new</span>
@@ -533,14 +557,16 @@ const OrderDetailModal = ({ order, onClose, onStatusUpdate, onPrint, onReviewAnd
                             <button
                               type="button"
                               onClick={async () => {
-                                if (fileUrls[idx]) {
-                                  window.open(fileUrls[idx], '_blank');
+                                const targetUrl = sanitizeUrl(fileUrls[idx], idx);
+                                if (targetUrl && (targetUrl.startsWith('http://') || targetUrl.startsWith('https://'))) {
+                                  window.open(targetUrl, '_blank');
                                 } else {
                                   try {
                                     const res = await api.get(`/shop/orders/${order.order_id}/files/${idx}/download-url`);
                                     if (res.data?.download_url) {
-                                      setFileUrls(prev => ({ ...prev, [idx]: res.data.download_url }));
-                                      window.open(res.data.download_url, '_blank');
+                                      const cleanUrl = sanitizeUrl(res.data.download_url, idx);
+                                      setFileUrls(prev => ({ ...prev, [idx]: cleanUrl }));
+                                      if (cleanUrl) window.open(cleanUrl, '_blank');
                                     }
                                   } catch (err) {
                                     console.error('Failed to get download URL:', err);

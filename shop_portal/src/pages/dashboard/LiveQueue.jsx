@@ -162,7 +162,15 @@ const handleStatusUpdate = async (orderId, newStatus) => {
         // Fallback: open in browser tab
         try {
           const res = await api.get(`/shop/orders/${orderId}/files/0/download-url`);
-          const url = res.data.download_url;
+          let url = res.data?.download_url;
+          if (url && url.startsWith('gs://')) {
+            const cleanPath = url.replace(/^gs:\/\/[^/]+\//, '');
+            url = `https://firebasestorage.googleapis.com/v0/b/printit-4d823.firebasestorage.app/o/${encodeURIComponent(cleanPath)}?alt=media`;
+          }
+          if (!url || (!url.startsWith('http://') && !url.startsWith('https://'))) {
+            const token = localStorage.getItem('token');
+            url = `${api.defaults.baseURL}/shop/orders/${orderId}/files/0/proxy${token ? `?token=${encodeURIComponent(token)}` : ''}`;
+          }
           const newWin = window.open(url, '_blank');
           if (!newWin) alert('Popup blocked. Please allow popups to open the print preview.');
         } catch (fallbackErr) {

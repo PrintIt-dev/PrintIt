@@ -355,6 +355,11 @@ router.get('/orders/:id/files/:file_index/download-url', async (req, res) => {
             downloadUrl = `https://firebasestorage.googleapis.com/v0/b/${bucketName}/o/${encodeURIComponent(cleanPath)}?alt=media`;
         }
 
+        // Final safety check: if still missing or using an unknown scheme, provide relative proxy endpoint
+        if (!downloadUrl || (!downloadUrl.startsWith('http://') && !downloadUrl.startsWith('https://'))) {
+            downloadUrl = `/api/shop/orders/${id}/files/${index}/proxy`;
+        }
+
         return res.json({ download_url: downloadUrl, original_name: originalName });
 
     } catch (err) {
@@ -376,9 +381,8 @@ router.get('/orders/:id/files/download-all', async (req, res) => {
 
 /**
  * @route   GET /api/shop/orders/:id/files/:file_index/proxy
- * @desc    Serve the uploaded file for download/print via a signed Firebase URL.
- *          Uses Firebase Admin SDK to generate a short-lived signed URL so that
- *          private bucket files are always accessible without storing public ACLs.
+ * @desc    Serve the uploaded file for download/print via a signed Firebase URL or stream.
+ *          Uses Firebase Admin SDK to stream private bucket files directly without storing public ACLs.
  * @access  Private (Shop Owner Only)
  */
 router.get('/orders/:id/files/:file_index/proxy', async (req, res) => {
@@ -433,7 +437,7 @@ router.get('/orders/:id/files/:file_index/proxy', async (req, res) => {
         
         const rawOriginalName = fileInfo.original_name || 'document.pdf';
         const extMatch = rawOriginalName.match(/\.[0-9a-z]+$/i);
-        const ext = extMatch ? extMatch[0] : '.pdf';
+        const ext = extMatch ? extMatch[0].toLowerCase() : '.pdf';
         const shortId = id.split('-')[0];
         const originalName = files.length > 1 ? `${shortId}_${fileIdx + 1}${ext}` : `${shortId}${ext}`;
 
@@ -451,11 +455,13 @@ router.get('/orders/:id/files/:file_index/proxy', async (req, res) => {
             res.setHeader('Expires', '0');
         };
 
-        // ---------------------------------------------------------------
-        // Strategy: Try Firebase Admin signed URL first (works for private
-        // buckets). Fall back to direct https proxy if it's not a Firebase
-        // Storage URL or if signing fails.
-        // ---------------------------------------------------------------
+        // Determine content-type from file extension
+        let defaultContentType = 'application/octet-stream';
+        if (ext === '.pdf') defaultContentType = 'application/pdf';
+        else if (ext === '.png') defaultContentType = 'image/png';
+        else if (ext === '.jpg' || ext === '.jpeg') defaultContentType = 'image/jpeg';
+        else if (ext === '.webp') defaultContentType = 'image/webp';
+
         const isFirebaseUrl = Boolean(
             filePublicId ||
             (fileUrl && (
@@ -466,36 +472,24 @@ router.get('/orders/:id/files/:file_index/proxy', async (req, res) => {
         );
         
         if (isFirebaseUrl && filePublicId) {
-            // Use Firebase Admin SDK to generate a short-lived signed URL
+            // Direct streaming using Firebase Admin SDK credentials
             try {
                 const { getStorage } = require('../config/firebase');
                 const bucket = getStorage().bucket();
                 const fileRef = bucket.file(filePublicId);
-                const ttlMs = isSecure ? (15 * 60 * 1000) : (60 * 60 * 1000);
 
-                const [signedUrl] = await fileRef.getSignedUrl({
-                    action: 'read',
-                    expires: Date.now() + ttlMs,
-                    responseDisposition: `inline; filename="${encodeURIComponent(originalName)}"`,
-                });
-
-                // Proxy via signed URL
-                const https = require('https');
-                https.get(signedUrl, (response) => {
-                    if (response.statusCode !== 200) {
-                        console.error('[proxy] Firebase signed URL returned HTTP error status:', response.statusCode);
-                        return res.status(response.statusCode).send('Failed to fetch file');
+                applySecurityHeaders(defaultContentType);
+                const stream = fileRef.createReadStream();
+                stream.on('error', (streamErr) => {
+                    console.error('[proxy] Firebase createReadStream error:', streamErr.message);
+                    if (!res.headersSent) {
+                        res.status(500).json({ error: 'Failed to stream file from storage' });
                     }
-                    applySecurityHeaders(response.headers['content-type']);
-                    response.pipe(res);
-                }).on('error', (err) => {
-                    console.error('[proxy] Signed URL fetch error:', err.message);
-                    res.status(500).json({ error: 'Error proxying signed file' });
                 });
+                stream.pipe(res);
                 return;
             } catch (signErr) {
-                console.warn('[proxy] Could not generate signed URL, falling back to direct proxy:', signErr.message);
-                // Fall through to direct proxy below
+                console.warn('[proxy] Direct stream failed, falling back to direct proxy:', signErr.message);
             }
         }
 
@@ -520,7 +514,7 @@ router.get('/orders/:id/files/:file_index/proxy', async (req, res) => {
                 console.error('[proxy] Direct fetch returned non-200 HTTP status:', response.statusCode);
                 return res.status(response.statusCode).send('Failed to fetch file from storage');
             }
-            applySecurityHeaders(response.headers['content-type']);
+            applySecurityHeaders(response.headers['content-type'] || defaultContentType);
             response.pipe(res);
         }).on('error', (err) => {
             console.error('[proxy] Direct proxy error:', err.message);
