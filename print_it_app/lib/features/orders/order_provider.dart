@@ -7,6 +7,7 @@ class FileEntry {
   final PlatformFile file;
   final int pages;
   final String colorMode;
+  final String paperSize;
   final int copies;
   final String binding;
   final int pagesPerPaper;
@@ -21,6 +22,7 @@ class FileEntry {
     required this.file,
     this.pages = 1,
     this.colorMode = 'B&W',
+    this.paperSize = 'A4',
     this.copies = 1,
     this.binding = 'none',
     this.pagesPerPaper = 1,
@@ -36,6 +38,7 @@ class FileEntry {
     PlatformFile? file,
     int? pages,
     String? colorMode,
+    String? paperSize,
     int? copies,
     String? binding,
     int? pagesPerPaper,
@@ -50,6 +53,7 @@ class FileEntry {
       file: file ?? this.file,
       pages: pages ?? this.pages,
       colorMode: colorMode ?? this.colorMode,
+      paperSize: paperSize ?? this.paperSize,
       copies: copies ?? this.copies,
       binding: binding ?? this.binding,
       pagesPerPaper: pagesPerPaper ?? this.pagesPerPaper,
@@ -70,6 +74,7 @@ class OrderState {
   final List<FileEntry> files;
   final int activeFileIndex;
   final String colorMode;
+  final String paperSize;
   final int copies;
   final int pages;
   final String binding;
@@ -99,6 +104,7 @@ class OrderState {
     this.files = const [],
     this.activeFileIndex = 0,
     this.colorMode = 'B&W',
+    this.paperSize = 'A4',
     this.copies = 1,
     this.pages = 1,
     this.binding = 'none',
@@ -186,6 +192,7 @@ class OrderState {
     List<FileEntry>? files,
     int? activeFileIndex,
     String? colorMode,
+    String? paperSize,
     int? copies,
     int? pages,
     String? binding,
@@ -215,6 +222,7 @@ class OrderState {
       files: files ?? this.files,
       activeFileIndex: activeFileIndex ?? this.activeFileIndex,
       colorMode: colorMode ?? this.colorMode,
+      paperSize: paperSize ?? this.paperSize,
       copies: copies ?? this.copies,
       pages: pages ?? this.pages,
       binding: binding ?? this.binding,
@@ -301,6 +309,7 @@ class OrderNotifier extends Notifier<OrderState> {
         file: files.first.file,
         pages: files.first.pages,
         colorMode: files.first.colorMode,
+        paperSize: files.first.paperSize,
         copies: files.first.copies,
         binding: files.first.binding,
         pagesPerPaper: files.first.pagesPerPaper,
@@ -321,6 +330,7 @@ class OrderNotifier extends Notifier<OrderState> {
         file: demoFile,
         pages: 3,
         colorMode: state.colorMode,
+        paperSize: state.paperSize,
         copies: state.copies,
         binding: state.binding,
         pagesPerPaper: state.pagesPerPaper,
@@ -346,6 +356,7 @@ class OrderNotifier extends Notifier<OrderState> {
         file: entry.file,
         pages: entry.pages,
         colorMode: entry.colorMode,
+        paperSize: entry.paperSize,
         copies: entry.copies,
         binding: entry.binding,
         pagesPerPaper: entry.pagesPerPaper,
@@ -452,6 +463,18 @@ class OrderNotifier extends Notifier<OrderState> {
     state = state.copyWith(sides: val);
     if (state.files.isNotEmpty && state.activeFileIndex < state.files.length) {
       final updated = state.files[state.activeFileIndex].copyWith(sides: val);
+      final newFiles = List<FileEntry>.from(state.files);
+      newFiles[state.activeFileIndex] = updated;
+      state = state.copyWith(files: newFiles);
+    }
+    _calculateTotal();
+  }
+
+  void setPaperSize(String size) {
+    final validSize = size.toUpperCase();
+    state = state.copyWith(paperSize: validSize);
+    if (state.files.isNotEmpty && state.activeFileIndex < state.files.length) {
+      final updated = state.files[state.activeFileIndex].copyWith(paperSize: validSize);
       final newFiles = List<FileEntry>.from(state.files);
       newFiles[state.activeFileIndex] = updated;
       state = state.copyWith(files: newFiles);
@@ -578,9 +601,12 @@ class OrderNotifier extends Notifier<OrderState> {
     if (state.binding == 'hardcover') bindingPrice = 60.0;
 
     String targetColor = hasColor ? 'color' : 'bw';
+    String targetSize = state.paperSize.toUpperCase();
 
     for (var rule in state.pricingRules) {
-      if (rule['color'] == targetColor && rule['size'] == 'A4') {
+      final rColor = rule['color']?.toString().toLowerCase();
+      final rSize = rule['size']?.toString().toUpperCase() ?? 'A4';
+      if (rColor == targetColor && rSize == targetSize) {
         if (rule['sides'] == 'single') {
           baseSinglePrice = double.tryParse(rule['price_per_page']?.toString() ?? '') ?? baseSinglePrice;
         } else if (rule['sides'] == 'double') {
@@ -588,6 +614,26 @@ class OrderNotifier extends Notifier<OrderState> {
         }
         if (state.binding == 'spiral' || state.binding == 'hardcover') {
           bindingPrice = double.tryParse(rule['binding_spiral_price']?.toString() ?? '') ?? bindingPrice;
+        }
+      }
+    }
+    bool hasGridSizeRule = state.pricingRules.any((r) =>
+      r['color']?.toString().toLowerCase() == targetColor &&
+      (r['size']?.toString().toUpperCase() ?? 'A4') == targetSize
+    );
+    if (!hasGridSizeRule && targetSize != 'A4') {
+      for (var rule in state.pricingRules) {
+        final rColor = rule['color']?.toString().toLowerCase();
+        final rSize = rule['size']?.toString().toUpperCase() ?? 'A4';
+        if (rColor == targetColor && rSize == 'A4') {
+          if (rule['sides'] == 'single') {
+            baseSinglePrice = double.tryParse(rule['price_per_page']?.toString() ?? '') ?? baseSinglePrice;
+          } else if (rule['sides'] == 'double') {
+            baseDoublePrice = double.tryParse(rule['price_per_page']?.toString() ?? '') ?? baseDoublePrice;
+          }
+          if (state.binding == 'spiral' || state.binding == 'hardcover') {
+            bindingPrice = double.tryParse(rule['binding_spiral_price']?.toString() ?? '') ?? bindingPrice;
+          }
         }
       }
     }
@@ -626,9 +672,12 @@ class OrderNotifier extends Notifier<OrderState> {
     if (entry.binding == 'hardcover') bindingPrice = 60.0; // ₹60 standard hardcover
 
     String targetColor = entry.colorMode == 'B&W' ? 'bw' : 'color';
+    String targetSize = entry.paperSize.toUpperCase();
 
     for (var rule in state.pricingRules) {
-      if (rule['color'] == targetColor && rule['size'] == 'A4') {
+      final rColor = rule['color']?.toString().toLowerCase();
+      final rSize = rule['size']?.toString().toUpperCase() ?? 'A4';
+      if (rColor == targetColor && rSize == targetSize) {
         if (rule['sides'] == 'single') {
           baseSinglePrice = double.tryParse(rule['price_per_page']?.toString() ?? '') ?? baseSinglePrice;
         } else if (rule['sides'] == 'double') {
@@ -636,6 +685,26 @@ class OrderNotifier extends Notifier<OrderState> {
         }
         if (entry.binding == 'spiral' || entry.binding == 'hardcover') {
           bindingPrice = double.tryParse(rule['binding_spiral_price']?.toString() ?? '') ?? bindingPrice;
+        }
+      }
+    }
+    bool hasFileSizeRule = state.pricingRules.any((r) =>
+      r['color']?.toString().toLowerCase() == targetColor &&
+      (r['size']?.toString().toUpperCase() ?? 'A4') == targetSize
+    );
+    if (!hasFileSizeRule && targetSize != 'A4') {
+      for (var rule in state.pricingRules) {
+        final rColor = rule['color']?.toString().toLowerCase();
+        final rSize = rule['size']?.toString().toUpperCase() ?? 'A4';
+        if (rColor == targetColor && rSize == 'A4') {
+          if (rule['sides'] == 'single') {
+            baseSinglePrice = double.tryParse(rule['price_per_page']?.toString() ?? '') ?? baseSinglePrice;
+          } else if (rule['sides'] == 'double') {
+            baseDoublePrice = double.tryParse(rule['price_per_page']?.toString() ?? '') ?? baseDoublePrice;
+          }
+          if (entry.binding == 'spiral' || entry.binding == 'hardcover') {
+            bindingPrice = double.tryParse(rule['binding_spiral_price']?.toString() ?? '') ?? bindingPrice;
+          }
         }
       }
     }
@@ -675,9 +744,12 @@ class OrderNotifier extends Notifier<OrderState> {
     if (state.binding == 'hardcover') bindingPrice = 60.0;
 
     String targetColor = state.colorMode == 'B&W' ? 'bw' : 'color';
+    String targetSize = state.paperSize.toUpperCase();
     
     for (var rule in state.pricingRules) {
-      if (rule['color'] == targetColor && rule['size'] == 'A4') {
+      final rColor = rule['color']?.toString().toLowerCase();
+      final rSize = rule['size']?.toString().toUpperCase() ?? 'A4';
+      if (rColor == targetColor && rSize == targetSize) {
         if (rule['sides'] == 'single') {
           baseSinglePrice = double.tryParse(rule['price_per_page']?.toString() ?? '') ?? baseSinglePrice;
         } else if (rule['sides'] == 'double') {
@@ -685,6 +757,26 @@ class OrderNotifier extends Notifier<OrderState> {
         }
         if (state.binding == 'spiral' || state.binding == 'hardcover') {
           bindingPrice = double.tryParse(rule['binding_spiral_price']?.toString() ?? '') ?? bindingPrice;
+        }
+      }
+    }
+    bool hasSingleSizeRule = state.pricingRules.any((r) =>
+      r['color']?.toString().toLowerCase() == targetColor &&
+      (r['size']?.toString().toUpperCase() ?? 'A4') == targetSize
+    );
+    if (!hasSingleSizeRule && targetSize != 'A4') {
+      for (var rule in state.pricingRules) {
+        final rColor = rule['color']?.toString().toLowerCase();
+        final rSize = rule['size']?.toString().toUpperCase() ?? 'A4';
+        if (rColor == targetColor && rSize == 'A4') {
+          if (rule['sides'] == 'single') {
+            baseSinglePrice = double.tryParse(rule['price_per_page']?.toString() ?? '') ?? baseSinglePrice;
+          } else if (rule['sides'] == 'double') {
+            baseDoublePrice = double.tryParse(rule['price_per_page']?.toString() ?? '') ?? baseDoublePrice;
+          }
+          if (state.binding == 'spiral' || state.binding == 'hardcover') {
+            bindingPrice = double.tryParse(rule['binding_spiral_price']?.toString() ?? '') ?? bindingPrice;
+          }
         }
       }
     }

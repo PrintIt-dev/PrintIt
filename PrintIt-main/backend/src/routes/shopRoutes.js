@@ -666,7 +666,7 @@ async function ensurePricingTable() {
             id              SERIAL PRIMARY KEY,
             shop_id         UUID NOT NULL REFERENCES shops(shop_id) ON DELETE CASCADE,
             color           TEXT NOT NULL CHECK (color IN ('bw', 'color')),
-            size            TEXT NOT NULL CHECK (size IN ('A4', 'A3', 'Letter')),
+            size            TEXT NOT NULL CHECK (size IN ('A4', 'A3', 'B5', 'Letter')),
             sides           TEXT NOT NULL CHECK (sides IN ('single', 'double')),
             price_per_page  NUMERIC(10, 2) NOT NULL,
             binding_staple_price NUMERIC(10, 2) NOT NULL DEFAULT 0,
@@ -709,7 +709,7 @@ router.post('/pricing', async (req, res) => {
     }
 
     const validColors = ['bw', 'color'];
-    const validSizes  = ['A4', 'A3', 'Letter'];
+    const validSizes  = ['A4', 'A3', 'B5', 'Letter'];
     const validSides  = ['single', 'double'];
 
     if (!validColors.includes(color)) return res.status(400).json({ error: `color must be one of: ${validColors.join(', ')}` });

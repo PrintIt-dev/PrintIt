@@ -15,6 +15,7 @@ class DocumentConfigScreen extends ConsumerStatefulWidget {
 
 class _DocumentConfigScreenState extends ConsumerState<DocumentConfigScreen> {
   late PageController _pageController;
+  int _currentSheetIndex = 0;
 
   @override
   void initState() {
@@ -43,6 +44,10 @@ class _DocumentConfigScreenState extends ConsumerState<DocumentConfigScreen> {
             activeFile.file.name.toLowerCase().endsWith('.jpeg') ||
             activeFile.file.name.toLowerCase().endsWith('.png') ||
             activeFile.file.name.toLowerCase().endsWith('.webp'));
+    final isMultiFileGrid = orderState.multiFileGrid && orderState.files.length > 1;
+    final totalPreviewSheets = isMultiFileGrid
+        ? (orderState.files.length / (orderState.pagesPerPaper > 0 ? orderState.pagesPerPaper : 1)).ceil()
+        : orderState.files.length;
 
     return Scaffold(
       backgroundColor: Colors.transparent,
@@ -123,12 +128,19 @@ class _DocumentConfigScreenState extends ConsumerState<DocumentConfigScreen> {
                                       children: [
                                         PageView.builder(
                                           controller: _pageController,
-                                          itemCount: orderState.files.length,
+                                          itemCount: totalPreviewSheets < 1 ? 1 : totalPreviewSheets,
                                           onPageChanged: (index) {
-                                            ref.read(orderProvider.notifier).setActiveFileIndex(index);
+                                            setState(() {
+                                              _currentSheetIndex = index;
+                                            });
+                                            if (!isMultiFileGrid) {
+                                              ref.read(orderProvider.notifier).setActiveFileIndex(index);
+                                            }
                                           },
                                           itemBuilder: (context, index) {
-                                            final entry = orderState.files[index];
+                                            final entry = isMultiFileGrid
+                                                ? (orderState.files.isNotEmpty ? orderState.files[0] : activeFile!)
+                                                : orderState.files[index];
                                             final fileName = entry.file.name.toLowerCase();
                                             final isImage = fileName.endsWith('.jpg') ||
                                                 fileName.endsWith('.jpeg') ||
@@ -136,6 +148,9 @@ class _DocumentConfigScreenState extends ConsumerState<DocumentConfigScreen> {
                                                 fileName.endsWith('.webp');
                                             return LiveFilePreview(
                                               fileEntry: entry,
+                                              allFileEntries: isMultiFileGrid ? orderState.files : null,
+                                              multiFileGrid: isMultiFileGrid,
+                                              sheetIndex: isMultiFileGrid ? index : 0,
                                               pagesPerPaper: orderState.pagesPerPaper,
                                               orientation: orderState.orientation,
                                               repeatImageOnGrid: orderState.repeatImageOnGrid,
@@ -268,20 +283,145 @@ class _DocumentConfigScreenState extends ConsumerState<DocumentConfigScreen> {
                                   ),
                                   const SizedBox(height: 12),
                                   if (orderState.files.isNotEmpty)
-                                    Text(
-                                      '${orderState.files[orderState.activeFileIndex].file.name} • ${orderState.files[orderState.activeFileIndex].pages} pages',
-                                      style: TextStyle(
-                                        color: isDark ? const Color(0xFFF1F5F9) : const Color(0xFF0F172A),
-                                        fontSize: 14,
-                                        fontWeight: FontWeight.w500,
-                                      ),
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
+                                    Builder(
+                                      builder: (context) {
+                                        final safeIndex = orderState.activeFileIndex.clamp(0, orderState.files.length - 1);
+                                        final safeSheet = _currentSheetIndex.clamp(0, (totalPreviewSheets - 1).clamp(0, 9999));
+                                        final text = isMultiFileGrid
+                                            ? 'Combining ${orderState.files.length} photos on grid • Sheet ${safeSheet + 1} of $totalPreviewSheets'
+                                            : '${orderState.files[safeIndex].file.name} • ${orderState.files[safeIndex].pages} pages';
+                                        return Text(
+                                          text,
+                                          style: TextStyle(
+                                            color: isDark ? const Color(0xFFF1F5F9) : const Color(0xFF0F172A),
+                                            fontSize: 14,
+                                            fontWeight: FontWeight.w500,
+                                          ),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        );
+                                      },
                                     ),
                                 ],
                               ),
                             ),
                             const SizedBox(height: 16),
+
+                            // Multi-file Grid Collation Card (when 2+ files/photos uploaded)
+                            if (orderState.files.length > 1) ...[
+                              Container(
+                                padding: const EdgeInsets.all(16),
+                                decoration: BoxDecoration(
+                                  color: isDark
+                                      ? const Color(0xFF121929).withValues(alpha: 0.90)
+                                      : Colors.white.withValues(alpha: 0.88),
+                                  borderRadius: BorderRadius.circular(20),
+                                  border: Border.all(
+                                    color: orderState.multiFileGrid
+                                        ? const Color(0xFF0284C7).withValues(alpha: 0.5)
+                                        : (isDark ? const Color(0xFF334155).withValues(alpha: 0.50) : Colors.white.withValues(alpha: 0.75)),
+                                    width: 1.0,
+                                  ),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: isDark
+                                          ? Colors.black.withValues(alpha: 0.25)
+                                          : const Color(0xFF0C4A6E).withValues(alpha: 0.05),
+                                      blurRadius: 16,
+                                      offset: const Offset(0, 5),
+                                    ),
+                                  ],
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      children: [
+                                        Container(
+                                          width: 40,
+                                          height: 40,
+                                          decoration: BoxDecoration(
+                                            color: orderState.multiFileGrid
+                                                ? (isDark ? const Color(0xFF0C4A6E) : const Color(0xFFE0F2FE))
+                                                : (isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9)),
+                                            borderRadius: BorderRadius.circular(12),
+                                          ),
+                                          child: Icon(
+                                            Icons.auto_awesome_mosaic_rounded,
+                                            size: 22,
+                                            color: orderState.multiFileGrid
+                                                ? const Color(0xFF0284C7)
+                                                : (isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B)),
+                                          ),
+                                        ),
+                                        const SizedBox(width: 14),
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            children: [
+                                              Text(
+                                                'Combine on 1 Sheet (Grid)',
+                                                style: TextStyle(
+                                                  color: isDark ? Colors.white : const Color(0xFF0F172A),
+                                                  fontSize: 14,
+                                                  fontWeight: FontWeight.w600,
+                                                ),
+                                              ),
+                                              const SizedBox(height: 2),
+                                              Text(
+                                                'Tile all ${orderState.files.length} uploaded files/photos onto a single sheet',
+                                                style: TextStyle(
+                                                  color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+                                                  fontSize: 12,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                        Switch.adaptive(
+                                          value: orderState.multiFileGrid,
+                                          activeTrackColor: const Color(0xFF0284C7),
+                                          onChanged: (val) {
+                                            ref.read(orderProvider.notifier).setMultiFileGrid(val);
+                                            if (val && orderState.pagesPerPaper < 2) {
+                                              ref.read(orderProvider.notifier).setPagesPerPaper(orderState.files.length <= 2 ? 2 : 4);
+                                            }
+                                          },
+                                        ),
+                                      ],
+                                    ),
+                                    if (orderState.multiFileGrid) ...[
+                                      const SizedBox(height: 14),
+                                      const Divider(height: 1, color: Colors.white12),
+                                      const SizedBox(height: 12),
+                                      Row(
+                                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                        children: [
+                                          Text(
+                                            'Grid layout blocks:',
+                                            style: TextStyle(
+                                              fontSize: 12,
+                                              fontWeight: FontWeight.w500,
+                                              color: isDark ? const Color(0xFFCBD5E1) : const Color(0xFF334155),
+                                            ),
+                                          ),
+                                          Row(
+                                            children: [
+                                              _buildGridChoiceChip(ref, 2, '2-up', orderState.pagesPerPaper == 2, isDark),
+                                              const SizedBox(width: 6),
+                                              _buildGridChoiceChip(ref, 4, '4-up', orderState.pagesPerPaper == 4, isDark),
+                                              const SizedBox(width: 6),
+                                              _buildGridChoiceChip(ref, 6, '6-up', orderState.pagesPerPaper == 6, isDark),
+                                            ],
+                                          ),
+                                        ],
+                                      ),
+                                    ],
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(height: 16),
+                            ],
 
                             // Repeat Photo Across Sheet Card
                             if (isImageFile && orderState.pagesPerPaper > 1) ...[
@@ -527,6 +667,74 @@ class _DocumentConfigScreenState extends ConsumerState<DocumentConfigScreen> {
                             ),
                             const SizedBox(height: 20),
 
+                            // Paper Size Section
+                            Padding(
+                              padding: const EdgeInsets.only(left: 2, bottom: 8),
+                              child: Text(
+                                'Paper size',
+                                style: TextStyle(
+                                  color: isDark ? const Color(0xFFF1F5F9) : const Color(0xFF0F172A),
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: _buildSelectableCard(
+                                    isDark: isDark,
+                                    isSelected: orderState.paperSize == 'A4',
+                                    onTap: () => ref.read(orderProvider.notifier).setPaperSize('A4'),
+                                    icon: Icon(
+                                      Icons.article_outlined,
+                                      size: 24,
+                                      color: orderState.paperSize == 'A4'
+                                          ? const Color(0xFF0891B2)
+                                          : (isDark ? const Color(0xFFCBD5E1) : const Color(0xFF0F172A)),
+                                    ),
+                                    title: 'A4',
+                                    subtitle: 'Standard',
+                                  ),
+                                ),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: _buildSelectableCard(
+                                    isDark: isDark,
+                                    isSelected: orderState.paperSize == 'A3',
+                                    onTap: () => ref.read(orderProvider.notifier).setPaperSize('A3'),
+                                    icon: Icon(
+                                      Icons.aspect_ratio_outlined,
+                                      size: 24,
+                                      color: orderState.paperSize == 'A3'
+                                          ? const Color(0xFF0891B2)
+                                          : (isDark ? const Color(0xFFCBD5E1) : const Color(0xFF0F172A)),
+                                    ),
+                                    title: 'A3',
+                                    subtitle: 'Large',
+                                  ),
+                                ),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: _buildSelectableCard(
+                                    isDark: isDark,
+                                    isSelected: orderState.paperSize == 'B5',
+                                    onTap: () => ref.read(orderProvider.notifier).setPaperSize('B5'),
+                                    icon: Icon(
+                                      Icons.menu_book_outlined,
+                                      size: 24,
+                                      color: orderState.paperSize == 'B5'
+                                          ? const Color(0xFF0891B2)
+                                          : (isDark ? const Color(0xFFCBD5E1) : const Color(0xFF0F172A)),
+                                    ),
+                                    title: 'B5',
+                                    subtitle: 'Book',
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 20),
+
                             // Choose Print Orientation Section
                             Padding(
                               padding: const EdgeInsets.only(left: 2, bottom: 8),
@@ -625,6 +833,7 @@ class _DocumentConfigScreenState extends ConsumerState<DocumentConfigScreen> {
                                       ),
                                     ),
                                     title: 'Single Sided',
+                                    subtitle: '1 side / sheet',
                                   ),
                                 ),
                                 const SizedBox(width: 12),
@@ -682,6 +891,7 @@ class _DocumentConfigScreenState extends ConsumerState<DocumentConfigScreen> {
                                       ),
                                     ),
                                     title: 'Back-to-Back',
+                                    subtitle: '2 sides / sheet',
                                   ),
                                 ),
                               ],
@@ -764,6 +974,102 @@ class _DocumentConfigScreenState extends ConsumerState<DocumentConfigScreen> {
                                 ),
                               ),
                             ),
+                            const SizedBox(height: 20),
+
+                            // Selective Page Printing Card (Optional)
+                            Container(
+                              padding: const EdgeInsets.all(16),
+                              decoration: BoxDecoration(
+                                color: isDark
+                                    ? const Color(0xFF121929).withValues(alpha: 0.90)
+                                    : Colors.white.withValues(alpha: 0.90),
+                                borderRadius: BorderRadius.circular(20),
+                                border: Border.all(
+                                  color: isDark
+                                      ? const Color(0xFF334155).withValues(alpha: 0.50)
+                                      : const Color(0xFFE2E8F0),
+                                  width: 1.0,
+                                ),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: isDark
+                                        ? Colors.black.withValues(alpha: 0.20)
+                                        : const Color(0x0A0F172A),
+                                    blurRadius: 16,
+                                    offset: const Offset(0, 4),
+                                  ),
+                                ],
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      Row(
+                                        children: [
+                                          const Icon(
+                                            Icons.filter_none_rounded,
+                                            size: 20,
+                                            color: Color(0xFF0284C7),
+                                          ),
+                                          const SizedBox(width: 8),
+                                          Text(
+                                            'Selective Page Printing (Optional)',
+                                            style: TextStyle(
+                                              color: isDark ? const Color(0xFFF1F5F9) : const Color(0xFF0F172A),
+                                              fontSize: 14,
+                                              fontWeight: FontWeight.w600,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                      Text(
+                                        'e.g. 1-5, 8, 11-14 or leave blank for All',
+                                        style: TextStyle(
+                                          color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w400,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 12),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                                    decoration: BoxDecoration(
+                                      color: isDark
+                                          ? const Color(0xFF0F172A).withValues(alpha: 0.60)
+                                          : const Color(0xFFF8FAFC),
+                                      borderRadius: BorderRadius.circular(12),
+                                      border: Border.all(
+                                        color: isDark ? Colors.white12 : const Color(0xFFE2E8F0),
+                                        width: 1.0,
+                                      ),
+                                    ),
+                                    child: TextField(
+                                      onChanged: (val) => ref.read(orderProvider.notifier).setPageRange(val),
+                                      style: TextStyle(
+                                        color: isDark ? Colors.white : const Color(0xFF0F172A),
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                      decoration: InputDecoration(
+                                        hintText: 'Leave empty to print all document pages',
+                                        hintStyle: TextStyle(
+                                          color: isDark ? const Color(0xFF64748B) : const Color(0xFF94A3B8),
+                                          fontSize: 13,
+                                        ),
+                                        border: InputBorder.none,
+                                        isDense: true,
+                                        contentPadding: EdgeInsets.zero,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+
                             const SizedBox(height: 20),
 
                             // Print Instructions Section
@@ -868,47 +1174,55 @@ class _DocumentConfigScreenState extends ConsumerState<DocumentConfigScreen> {
                               ],
                             ),
                             const SizedBox(height: 10),
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: _buildSelectableCard(
-                                    isDark: isDark,
-                                    isSelected: orderState.printMode != 'secure',
-                                    onTap: () {
-                                      ref.read(orderProvider.notifier).setPrintMode('normal');
-                                    },
-                                    icon: Icon(
-                                      Icons.print_outlined,
-                                      size: 20,
-                                      color: orderState.printMode != 'secure'
-                                          ? const Color(0xFF0284C7)
-                                          : (isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B)),
-                                    ),
-                                    title: 'Normal',
-                                    subtitle: 'Standard temp storage',
-                                  ),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF0284C7).withValues(alpha: 0.08),
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(
+                                  color: const Color(0xFF0284C7).withValues(alpha: 0.25),
                                 ),
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  child: _buildSelectableCard(
-                                    isDark: isDark,
-                                    isSelected: orderState.printMode == 'secure',
-                                    onTap: () {
-                                      ref.read(orderProvider.notifier).setPrintMode('secure');
-                                      _showSecurePrintingExplanation(context, isDark);
-                                    },
-                                    icon: Icon(
+                              ),
+                              child: Row(
+                                children: [
+                                  Container(
+                                    padding: const EdgeInsets.all(8),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFF0284C7).withValues(alpha: 0.15),
+                                      shape: BoxShape.circle,
+                                    ),
+                                    child: const Icon(
                                       Icons.security_rounded,
                                       size: 20,
-                                      color: orderState.printMode == 'secure'
-                                          ? const Color(0xFFF59E0B)
-                                          : (isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B)),
+                                      color: Color(0xFF0284C7),
                                     ),
-                                    title: '🔒 Secure',
-                                    subtitle: 'Auto-erased on print',
                                   ),
-                                ),
-                              ],
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        const Text(
+                                          '100% Privacy Protected',
+                                          style: TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 13,
+                                            color: Color(0xFF0284C7),
+                                          ),
+                                        ),
+                                        const SizedBox(height: 2),
+                                        Text(
+                                          'All documents are printed securely and permanently auto-deleted from both cloud and printer immediately upon completion.',
+                                          style: TextStyle(
+                                            fontSize: 11,
+                                            color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
                             ),
                           ],
                         ),
@@ -949,13 +1263,30 @@ class _DocumentConfigScreenState extends ConsumerState<DocumentConfigScreen> {
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Text(
-                        'Total ${(orderState.pages / orderState.pagesPerPaper).ceil() * orderState.copies} pages',
-                        style: TextStyle(
-                          color: isDark ? Colors.white : const Color(0xFF0F172A),
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
-                        ),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            orderState.sides == 'double'
+                                ? 'Total ${orderState.totalSheets} ${orderState.totalSheets == 1 ? 'sheet' : 'sheets'} (${orderState.totalPagesCount} pages)'
+                                : 'Total ${orderState.totalSheets} ${orderState.totalSheets == 1 ? 'sheet' : 'sheets'}',
+                            style: TextStyle(
+                              color: isDark ? Colors.white : const Color(0xFF0F172A),
+                              fontSize: 15,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            '₹${orderState.amountTotal.toStringAsFixed(2)}',
+                            style: const TextStyle(
+                              color: Color(0xFF0284C7),
+                              fontSize: 14,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
                       ),
                       ElevatedButton(
                         onPressed: () {
@@ -1350,6 +1681,36 @@ class _DocumentConfigScreenState extends ConsumerState<DocumentConfigScreen> {
             color: isSelected ? Colors.white : const Color(0xFFCBD5E1),
             fontSize: 11,
             fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildGridChoiceChip(WidgetRef ref, int count, String label, bool isSelected, bool isDark) {
+    return GestureDetector(
+      onTap: () {
+        HapticFeedback.selectionClick();
+        ref.read(orderProvider.notifier).setPagesPerPaper(count);
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+        decoration: BoxDecoration(
+          color: isSelected
+              ? const Color(0xFF0284C7)
+              : (isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9)),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: isSelected ? const Color(0xFF38BDF8) : (isDark ? Colors.white12 : const Color(0xFFE2E8F0)),
+            width: 1,
+          ),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.w600,
+            color: isSelected ? Colors.white : (isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B)),
           ),
         ),
       ),

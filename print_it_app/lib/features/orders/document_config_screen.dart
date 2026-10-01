@@ -667,6 +667,74 @@ class _DocumentConfigScreenState extends ConsumerState<DocumentConfigScreen> {
                             ),
                             const SizedBox(height: 20),
 
+                            // Paper Size Section
+                            Padding(
+                              padding: const EdgeInsets.only(left: 2, bottom: 8),
+                              child: Text(
+                                'Paper size',
+                                style: TextStyle(
+                                  color: isDark ? const Color(0xFFF1F5F9) : const Color(0xFF0F172A),
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: _buildSelectableCard(
+                                    isDark: isDark,
+                                    isSelected: orderState.paperSize == 'A4',
+                                    onTap: () => ref.read(orderProvider.notifier).setPaperSize('A4'),
+                                    icon: Icon(
+                                      Icons.article_outlined,
+                                      size: 24,
+                                      color: orderState.paperSize == 'A4'
+                                          ? const Color(0xFF0891B2)
+                                          : (isDark ? const Color(0xFFCBD5E1) : const Color(0xFF0F172A)),
+                                    ),
+                                    title: 'A4',
+                                    subtitle: 'Standard',
+                                  ),
+                                ),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: _buildSelectableCard(
+                                    isDark: isDark,
+                                    isSelected: orderState.paperSize == 'A3',
+                                    onTap: () => ref.read(orderProvider.notifier).setPaperSize('A3'),
+                                    icon: Icon(
+                                      Icons.aspect_ratio_outlined,
+                                      size: 24,
+                                      color: orderState.paperSize == 'A3'
+                                          ? const Color(0xFF0891B2)
+                                          : (isDark ? const Color(0xFFCBD5E1) : const Color(0xFF0F172A)),
+                                    ),
+                                    title: 'A3',
+                                    subtitle: 'Large',
+                                  ),
+                                ),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: _buildSelectableCard(
+                                    isDark: isDark,
+                                    isSelected: orderState.paperSize == 'B5',
+                                    onTap: () => ref.read(orderProvider.notifier).setPaperSize('B5'),
+                                    icon: Icon(
+                                      Icons.menu_book_outlined,
+                                      size: 24,
+                                      color: orderState.paperSize == 'B5'
+                                          ? const Color(0xFF0891B2)
+                                          : (isDark ? const Color(0xFFCBD5E1) : const Color(0xFF0F172A)),
+                                    ),
+                                    title: 'B5',
+                                    subtitle: 'Book',
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 20),
+
                             // Choose Print Orientation Section
                             Padding(
                               padding: const EdgeInsets.only(left: 2, bottom: 8),

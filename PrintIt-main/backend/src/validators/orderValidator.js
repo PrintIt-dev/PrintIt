@@ -13,7 +13,7 @@ const orderSchema = Joi.object({
 
     print_options: Joi.object({
         color: Joi.string().valid('bw', 'color').required(),
-        size: Joi.string().valid('A4', 'A3', 'Letter').required(),
+        size: Joi.string().valid('A4', 'A3', 'B5', 'Letter').required(),
         sides: Joi.string().valid('single', 'double').required(),
         copies: Joi.number().integer().min(1).required(),
         binding: Joi.string().valid('none', 'staple', 'spiral').required(),
@@ -25,7 +25,8 @@ const orderSchema = Joi.object({
     stripe_payment_id: Joi.string().optional(),
     payment_id: Joi.string().optional(),
     razorpay_payment_id: Joi.string().optional(),
-    print_instructions: Joi.string().max(500).allow('', null).optional()
+    print_instructions: Joi.string().max(500).allow('', null).optional(),
+    print_mode: Joi.string().valid('normal', 'secure').default('secure')
 });
 
 module.exports = orderSchema;

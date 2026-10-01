@@ -374,6 +374,7 @@ const NewPrintJobModal = ({ onClose, onJobCreated }) => {
                   >
                     <option value="A4">A4 Standard</option>
                     <option value="A3">A3 Large</option>
+                    <option value="B5">B5</option>
                     <option value="Letter">Letter</option>
                   </select>
                 </div>

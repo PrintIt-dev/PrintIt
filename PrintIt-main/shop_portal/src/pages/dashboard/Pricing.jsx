@@ -82,6 +82,7 @@ const Pricing = () => {
                 <select name="size" value={formData.size} onChange={handleChange} className="w-full bg-surface-container-highest border border-outline-variant/50 rounded-lg p-2 text-on-surface focus:outline-none focus:border-primary">
                   <option value="A4">A4</option>
                   <option value="A3">A3</option>
+                  <option value="B5">B5</option>
                   <option value="Letter">Letter</option>
                 </select>
               </div>

@@ -13,7 +13,7 @@ const orderSchema = Joi.object({
 
     print_options: Joi.object({
         color: Joi.string().valid('bw', 'color').required(),
-        size: Joi.string().valid('A4', 'A3', 'Letter').required(),
+        size: Joi.string().valid('A4', 'A3', 'B5', 'Letter').required(),
         sides: Joi.string().valid('single', 'double').required(),
         copies: Joi.number().integer().min(1).required(),
         binding: Joi.string().valid('none', 'staple', 'spiral').required(),

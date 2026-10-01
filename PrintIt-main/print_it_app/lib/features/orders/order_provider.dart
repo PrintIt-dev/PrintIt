@@ -7,6 +7,7 @@ class FileEntry {
   final PlatformFile file;
   final int pages;
   final String colorMode;
+  final String paperSize;
   final int copies;
   final String binding;
   final int pagesPerPaper;
@@ -14,11 +15,14 @@ class FileEntry {
   final String orientation;
   final String sides;
   final bool repeatImageOnGrid;
+  final bool multiFileGrid;
+  final String pageRange;
 
   FileEntry({
     required this.file,
     this.pages = 1,
     this.colorMode = 'B&W',
+    this.paperSize = 'A4',
     this.copies = 1,
     this.binding = 'none',
     this.pagesPerPaper = 1,
@@ -26,12 +30,15 @@ class FileEntry {
     this.orientation = 'portrait',
     this.sides = 'single',
     this.repeatImageOnGrid = true,
+    this.multiFileGrid = false,
+    this.pageRange = '',
   });
 
   FileEntry copyWith({
     PlatformFile? file,
     int? pages,
     String? colorMode,
+    String? paperSize,
     int? copies,
     String? binding,
     int? pagesPerPaper,
@@ -39,11 +46,14 @@ class FileEntry {
     String? orientation,
     String? sides,
     bool? repeatImageOnGrid,
+    bool? multiFileGrid,
+    String? pageRange,
   }) {
     return FileEntry(
       file: file ?? this.file,
       pages: pages ?? this.pages,
       colorMode: colorMode ?? this.colorMode,
+      paperSize: paperSize ?? this.paperSize,
       copies: copies ?? this.copies,
       binding: binding ?? this.binding,
       pagesPerPaper: pagesPerPaper ?? this.pagesPerPaper,
@@ -51,6 +61,8 @@ class FileEntry {
       orientation: orientation ?? this.orientation,
       sides: sides ?? this.sides,
       repeatImageOnGrid: repeatImageOnGrid ?? this.repeatImageOnGrid,
+      multiFileGrid: multiFileGrid ?? this.multiFileGrid,
+      pageRange: pageRange ?? this.pageRange,
     );
   }
 }
@@ -62,6 +74,7 @@ class OrderState {
   final List<FileEntry> files;
   final int activeFileIndex;
   final String colorMode;
+  final String paperSize;
   final int copies;
   final int pages;
   final String binding;
@@ -70,6 +83,8 @@ class OrderState {
   final String orientation;
   final String sides;
   final bool repeatImageOnGrid;
+  final bool multiFileGrid;
+  final String pageRange;
   final String pickupType; // 'express' or 'scheduled'
   final DateTime? pickupTime;
   final String printMode; // 'normal' or 'secure'
@@ -89,6 +104,7 @@ class OrderState {
     this.files = const [],
     this.activeFileIndex = 0,
     this.colorMode = 'B&W',
+    this.paperSize = 'A4',
     this.copies = 1,
     this.pages = 1,
     this.binding = 'none',
@@ -97,9 +113,11 @@ class OrderState {
     this.orientation = 'portrait',
     this.sides = 'single',
     this.repeatImageOnGrid = true,
+    this.multiFileGrid = false,
+    this.pageRange = '',
     this.pickupType = 'express',
     this.pickupTime,
-    this.printMode = 'normal',
+    this.printMode = 'secure',
     this.amountTotal = 0.0,
     this.priceBw = 2.00,
     this.priceColor = 10.00,
@@ -116,6 +134,57 @@ class OrderState {
       ? files[activeFileIndex] 
       : null;
 
+  /// Total physical paper sheets across all configured files (taking duplex/back-to-back into account)
+  int get totalSheets {
+    if (multiFileGrid && files.length > 1) {
+      int sumPages = 0;
+      for (final f in files) {
+        sumPages += f.pages > 0 ? f.pages : 1;
+      }
+      final ppp = pagesPerPaper > 0 ? pagesPerPaper : files.length;
+      final printedSides = (sumPages / ppp).ceil();
+      final sheetsPerCopy = sides == 'double' ? (printedSides / 2).ceil() : printedSides;
+      final sum = sheetsPerCopy * (copies > 0 ? copies : 1);
+      return sum > 0 ? sum : 1;
+    }
+    if (files.isNotEmpty) {
+      int sum = 0;
+      for (final f in files) {
+        final ppp = f.pagesPerPaper > 0 ? f.pagesPerPaper : 1;
+        final p = f.pages > 0 ? f.pages : 1;
+        final printedSides = (p / ppp).ceil();
+        final sheetsPerCopy = f.sides == 'double' ? (printedSides / 2).ceil() : printedSides;
+        sum += sheetsPerCopy * (f.copies > 0 ? f.copies : 1);
+      }
+      return sum > 0 ? sum : 1;
+    }
+    final ppp = pagesPerPaper > 0 ? pagesPerPaper : 1;
+    final p = pages > 0 ? pages : 1;
+    final printedSides = (p / ppp).ceil();
+    final sheetsPerCopy = sides == 'double' ? (printedSides / 2).ceil() : printedSides;
+    final total = sheetsPerCopy * (copies > 0 ? copies : 1);
+    return total > 0 ? total : 1;
+  }
+
+  /// Total document page count across all files multiplied by copies
+  int get totalPagesCount {
+    if (files.isNotEmpty) {
+      int sum = 0;
+      for (final f in files) {
+        final ppp = f.pagesPerPaper > 0 ? f.pagesPerPaper : 1;
+        final p = f.pages > 0 ? f.pages : 1;
+        final printedSides = (p / ppp).ceil();
+        sum += printedSides * (f.copies > 0 ? f.copies : 1);
+      }
+      return sum > 0 ? sum : 1;
+    }
+    final ppp = pagesPerPaper > 0 ? pagesPerPaper : 1;
+    final p = pages > 0 ? pages : 1;
+    final printedSides = (p / ppp).ceil();
+    final total = printedSides * (copies > 0 ? copies : 1);
+    return total > 0 ? total : 1;
+  }
+
   OrderState copyWith({
     String? shopId,
     String? shopName,
@@ -123,6 +192,7 @@ class OrderState {
     List<FileEntry>? files,
     int? activeFileIndex,
     String? colorMode,
+    String? paperSize,
     int? copies,
     int? pages,
     String? binding,
@@ -131,6 +201,8 @@ class OrderState {
     String? orientation,
     String? sides,
     bool? repeatImageOnGrid,
+    bool? multiFileGrid,
+    String? pageRange,
     String? pickupType,
     DateTime? pickupTime,
     String? printMode,
@@ -150,6 +222,7 @@ class OrderState {
       files: files ?? this.files,
       activeFileIndex: activeFileIndex ?? this.activeFileIndex,
       colorMode: colorMode ?? this.colorMode,
+      paperSize: paperSize ?? this.paperSize,
       copies: copies ?? this.copies,
       pages: pages ?? this.pages,
       binding: binding ?? this.binding,
@@ -158,6 +231,8 @@ class OrderState {
       orientation: orientation ?? this.orientation,
       sides: sides ?? this.sides,
       repeatImageOnGrid: repeatImageOnGrid ?? this.repeatImageOnGrid,
+      multiFileGrid: multiFileGrid ?? this.multiFileGrid,
+      pageRange: pageRange ?? this.pageRange,
       pickupType: pickupType ?? this.pickupType,
       pickupTime: pickupTime ?? this.pickupTime,
       printMode: printMode ?? this.printMode,
@@ -223,14 +298,26 @@ class OrderNotifier extends Notifier<OrderState> {
 
   void setFile(PlatformFile file) {
     state = state.copyWith(file: file);
+    _calculateTotal();
   }
 
   void setFiles(List<FileEntry> files) {
     state = state.copyWith(files: files);
     // Also set the first file as the primary for backward compat
     if (files.isNotEmpty) {
-      state = state.copyWith(file: files.first.file, pages: files.first.pages);
+      state = state.copyWith(
+        file: files.first.file,
+        pages: files.first.pages,
+        colorMode: files.first.colorMode,
+        paperSize: files.first.paperSize,
+        copies: files.first.copies,
+        binding: files.first.binding,
+        pagesPerPaper: files.first.pagesPerPaper,
+        orientation: files.first.orientation,
+        sides: files.first.sides,
+      );
     }
+    _calculateTotal();
   }
 
   void addDemoFileIfEmpty() {
@@ -243,6 +330,7 @@ class OrderNotifier extends Notifier<OrderState> {
         file: demoFile,
         pages: 3,
         colorMode: state.colorMode,
+        paperSize: state.paperSize,
         copies: state.copies,
         binding: state.binding,
         pagesPerPaper: state.pagesPerPaper,
@@ -268,6 +356,7 @@ class OrderNotifier extends Notifier<OrderState> {
         file: entry.file,
         pages: entry.pages,
         colorMode: entry.colorMode,
+        paperSize: entry.paperSize,
         copies: entry.copies,
         binding: entry.binding,
         pagesPerPaper: entry.pagesPerPaper,
@@ -381,6 +470,18 @@ class OrderNotifier extends Notifier<OrderState> {
     _calculateTotal();
   }
 
+  void setPaperSize(String size) {
+    final validSize = size.toUpperCase();
+    state = state.copyWith(paperSize: validSize);
+    if (state.files.isNotEmpty && state.activeFileIndex < state.files.length) {
+      final updated = state.files[state.activeFileIndex].copyWith(paperSize: validSize);
+      final newFiles = List<FileEntry>.from(state.files);
+      newFiles[state.activeFileIndex] = updated;
+      state = state.copyWith(files: newFiles);
+    }
+    _calculateTotal();
+  }
+
   void setRepeatImageOnGrid(bool val) {
     state = state.copyWith(repeatImageOnGrid: val);
     if (state.files.isNotEmpty && state.activeFileIndex < state.files.length) {
@@ -409,10 +510,63 @@ class OrderNotifier extends Notifier<OrderState> {
     state = state.copyWith(pickupTime: time);
   }
 
+  void setMultiFileGrid(bool val) {
+    state = state.copyWith(multiFileGrid: val);
+    _calculateTotal();
+  }
+
+  static int parsePageRangeCount(String range, int maxPages) {
+
+    if (range.trim().isEmpty) return maxPages > 0 ? maxPages : 1;
+    final Set<int> pageSet = {};
+    final parts = range.split(RegExp(r'[,;\s]+'));
+    for (var part in parts) {
+      part = part.trim();
+      if (part.isEmpty) continue;
+      if (part.contains('-')) {
+        final dashParts = part.split('-');
+        if (dashParts.length == 2) {
+          final start = int.tryParse(dashParts[0].trim());
+          final end = int.tryParse(dashParts[1].trim());
+          if (start != null && end != null && start <= end) {
+            for (int i = start; i <= end; i++) {
+              if (maxPages <= 0 || (i >= 1 && i <= maxPages)) {
+                pageSet.add(i);
+              }
+            }
+          }
+        }
+      } else {
+        final single = int.tryParse(part);
+        if (single != null) {
+          if (maxPages <= 0 || (single >= 1 && single <= maxPages)) {
+            pageSet.add(single);
+          }
+        }
+      }
+    }
+    return pageSet.isNotEmpty ? pageSet.length : (maxPages > 0 ? maxPages : 1);
+  }
+
+  void setPageRange(String range) {
+    state = state.copyWith(pageRange: range);
+    if (state.files.isNotEmpty && state.activeFileIndex < state.files.length) {
+      final updated = state.files[state.activeFileIndex].copyWith(pageRange: range);
+      final newFiles = List<FileEntry>.from(state.files);
+      newFiles[state.activeFileIndex] = updated;
+      state = state.copyWith(files: newFiles);
+    }
+    _calculateTotal();
+  }
+
+
   void _calculateTotal() {
     double totalSubtotal = 0.0;
 
-    if (state.files.isNotEmpty) {
+    if (state.multiFileGrid && state.files.length > 1) {
+      // Multi-file grid collation: all files combined onto target sheets
+      totalSubtotal = _calculateMultiFileGridSubtotal();
+    } else if (state.files.isNotEmpty) {
       // Multi-file: aggregate costs across all files
       for (final entry in state.files) {
         totalSubtotal += _calculateFileSubtotal(entry);
@@ -435,65 +589,220 @@ class OrderNotifier extends Notifier<OrderState> {
     );
   }
 
+  /// Calculate subtotal when multi-file grid collation is enabled.
+  /// Combines total pages across all files onto target sheets.
+  double _calculateMultiFileGridSubtotal() {
+    bool hasColor = state.files.any((f) => f.colorMode == 'Color') || state.colorMode == 'Color';
+    double baseSinglePrice = hasColor ? state.priceColor : state.priceBw;
+    double baseDoublePrice = baseSinglePrice * 1.5;
+    double bindingPrice = 0.0;
+
+    if (state.binding == 'spiral') bindingPrice = 25.0;
+    if (state.binding == 'hardcover') bindingPrice = 60.0;
+
+    String targetColor = hasColor ? 'color' : 'bw';
+    String targetSize = state.paperSize.toUpperCase();
+
+    for (var rule in state.pricingRules) {
+      final rColor = rule['color']?.toString().toLowerCase();
+      final rSize = rule['size']?.toString().toUpperCase() ?? 'A4';
+      if (rColor == targetColor && rSize == targetSize) {
+        if (rule['sides'] == 'single') {
+          baseSinglePrice = double.tryParse(rule['price_per_page']?.toString() ?? '') ?? baseSinglePrice;
+        } else if (rule['sides'] == 'double') {
+          baseDoublePrice = double.tryParse(rule['price_per_page']?.toString() ?? '') ?? baseDoublePrice;
+        }
+        if (state.binding == 'spiral' || state.binding == 'hardcover') {
+          bindingPrice = double.tryParse(rule['binding_spiral_price']?.toString() ?? '') ?? bindingPrice;
+        }
+      }
+    }
+    bool hasGridSizeRule = state.pricingRules.any((r) =>
+      r['color']?.toString().toLowerCase() == targetColor &&
+      (r['size']?.toString().toUpperCase() ?? 'A4') == targetSize
+    );
+    if (!hasGridSizeRule && targetSize != 'A4') {
+      for (var rule in state.pricingRules) {
+        final rColor = rule['color']?.toString().toLowerCase();
+        final rSize = rule['size']?.toString().toUpperCase() ?? 'A4';
+        if (rColor == targetColor && rSize == 'A4') {
+          if (rule['sides'] == 'single') {
+            baseSinglePrice = double.tryParse(rule['price_per_page']?.toString() ?? '') ?? baseSinglePrice;
+          } else if (rule['sides'] == 'double') {
+            baseDoublePrice = double.tryParse(rule['price_per_page']?.toString() ?? '') ?? baseDoublePrice;
+          }
+          if (state.binding == 'spiral' || state.binding == 'hardcover') {
+            bindingPrice = double.tryParse(rule['binding_spiral_price']?.toString() ?? '') ?? bindingPrice;
+          }
+        }
+      }
+    }
+
+    int totalPages = 0;
+    for (final f in state.files) {
+      totalPages += f.pages > 0 ? f.pages : 1;
+    }
+
+    int ppp = state.pagesPerPaper > 0 ? state.pagesPerPaper : state.files.length;
+    int printedSides = (totalPages / ppp).ceil();
+    if (printedSides < 1) printedSides = 1;
+
+    double sheetCost = 0.0;
+    if (state.sides == 'double') {
+      int fullDoubleSheets = printedSides ~/ 2;
+      int remainingSingleSides = printedSides % 2;
+      sheetCost = (fullDoubleSheets * baseDoublePrice) + (remainingSingleSides * baseSinglePrice);
+    } else {
+      sheetCost = printedSides * baseSinglePrice;
+    }
+
+    int validCopies = state.copies > 0 ? state.copies : 1;
+    double docPrintCost = (sheetCost * validCopies) + bindingPrice;
+
+    return double.parse(docPrintCost.toStringAsFixed(2));
+  }
+
   /// Calculate subtotal for a single FileEntry using its own settings.
   double _calculateFileSubtotal(FileEntry entry) {
-    double basePrice = entry.colorMode == 'B&W' ? state.priceBw : state.priceColor;
+    double baseSinglePrice = entry.colorMode == 'B&W' ? state.priceBw : state.priceColor;
+    double baseDoublePrice = baseSinglePrice * 1.5;
     double bindingPrice = 0.0;
 
     if (entry.binding == 'spiral') bindingPrice = 25.0; // ₹25 standard spiral binding
     if (entry.binding == 'hardcover') bindingPrice = 60.0; // ₹60 standard hardcover
 
     String targetColor = entry.colorMode == 'B&W' ? 'bw' : 'color';
-    String targetSides = entry.sides;
+    String targetSize = entry.paperSize.toUpperCase();
 
     for (var rule in state.pricingRules) {
-      if (rule['color'] == targetColor && rule['size'] == 'A4' && rule['sides'] == targetSides) {
-        basePrice = double.tryParse(rule['price_per_page']?.toString() ?? '') ?? basePrice;
+      final rColor = rule['color']?.toString().toLowerCase();
+      final rSize = rule['size']?.toString().toUpperCase() ?? 'A4';
+      if (rColor == targetColor && rSize == targetSize) {
+        if (rule['sides'] == 'single') {
+          baseSinglePrice = double.tryParse(rule['price_per_page']?.toString() ?? '') ?? baseSinglePrice;
+        } else if (rule['sides'] == 'double') {
+          baseDoublePrice = double.tryParse(rule['price_per_page']?.toString() ?? '') ?? baseDoublePrice;
+        }
         if (entry.binding == 'spiral' || entry.binding == 'hardcover') {
           bindingPrice = double.tryParse(rule['binding_spiral_price']?.toString() ?? '') ?? bindingPrice;
         }
-        break;
+      }
+    }
+    bool hasFileSizeRule = state.pricingRules.any((r) =>
+      r['color']?.toString().toLowerCase() == targetColor &&
+      (r['size']?.toString().toUpperCase() ?? 'A4') == targetSize
+    );
+    if (!hasFileSizeRule && targetSize != 'A4') {
+      for (var rule in state.pricingRules) {
+        final rColor = rule['color']?.toString().toLowerCase();
+        final rSize = rule['size']?.toString().toUpperCase() ?? 'A4';
+        if (rColor == targetColor && rSize == 'A4') {
+          if (rule['sides'] == 'single') {
+            baseSinglePrice = double.tryParse(rule['price_per_page']?.toString() ?? '') ?? baseSinglePrice;
+          } else if (rule['sides'] == 'double') {
+            baseDoublePrice = double.tryParse(rule['price_per_page']?.toString() ?? '') ?? baseDoublePrice;
+          }
+          if (entry.binding == 'spiral' || entry.binding == 'hardcover') {
+            bindingPrice = double.tryParse(rule['binding_spiral_price']?.toString() ?? '') ?? bindingPrice;
+          }
+        }
       }
     }
 
     int totalPages = entry.pages > 0 ? entry.pages : 1;
-    int printedSides = (totalPages / entry.pagesPerPaper).ceil();
+    if (entry.pageRange.trim().isNotEmpty) {
+      totalPages = parsePageRangeCount(entry.pageRange, entry.pages);
+    } else if (state.pageRange.trim().isNotEmpty && state.files.length <= 1) {
+      totalPages = parsePageRangeCount(state.pageRange, state.pages);
+    }
+    int pagesPerPaper = entry.pagesPerPaper > 0 ? entry.pagesPerPaper : 1;
+    int printedSides = (totalPages / pagesPerPaper).ceil();
     if (printedSides < 1) printedSides = 1;
 
-    // Billing calculation: each printed page/side is charged basePrice
-    double docPrintCost = (basePrice * printedSides) * entry.copies;
+    double sheetCost = 0.0;
+    if (entry.sides == 'double') {
+      int fullDoubleSheets = printedSides ~/ 2;
+      int remainingSingleSides = printedSides % 2;
+      sheetCost = (fullDoubleSheets * baseDoublePrice) + (remainingSingleSides * baseSinglePrice);
+    } else {
+      sheetCost = printedSides * baseSinglePrice;
+    }
 
-    return double.parse((docPrintCost + bindingPrice).toStringAsFixed(2));
+    int validCopies = entry.copies > 0 ? entry.copies : 1;
+    double docPrintCost = (sheetCost * validCopies) + bindingPrice;
+
+    return double.parse(docPrintCost.toStringAsFixed(2));
   }
 
   /// Fallback for when files list is empty (backward compat).
   double _calculateSingleFileSubtotal() {
-    double basePrice = state.colorMode == 'B&W' ? state.priceBw : state.priceColor;
+    double baseSinglePrice = state.colorMode == 'B&W' ? state.priceBw : state.priceColor;
+    double baseDoublePrice = baseSinglePrice * 1.5;
     double bindingPrice = 0.0;
     
     if (state.binding == 'spiral') bindingPrice = 25.0;
     if (state.binding == 'hardcover') bindingPrice = 60.0;
 
     String targetColor = state.colorMode == 'B&W' ? 'bw' : 'color';
-    String targetSides = state.sides;
+    String targetSize = state.paperSize.toUpperCase();
     
     for (var rule in state.pricingRules) {
-      if (rule['color'] == targetColor && rule['size'] == 'A4' && rule['sides'] == targetSides) {
-        basePrice = double.tryParse(rule['price_per_page']?.toString() ?? '') ?? basePrice;
+      final rColor = rule['color']?.toString().toLowerCase();
+      final rSize = rule['size']?.toString().toUpperCase() ?? 'A4';
+      if (rColor == targetColor && rSize == targetSize) {
+        if (rule['sides'] == 'single') {
+          baseSinglePrice = double.tryParse(rule['price_per_page']?.toString() ?? '') ?? baseSinglePrice;
+        } else if (rule['sides'] == 'double') {
+          baseDoublePrice = double.tryParse(rule['price_per_page']?.toString() ?? '') ?? baseDoublePrice;
+        }
         if (state.binding == 'spiral' || state.binding == 'hardcover') {
           bindingPrice = double.tryParse(rule['binding_spiral_price']?.toString() ?? '') ?? bindingPrice;
         }
-        break;
+      }
+    }
+    bool hasSingleSizeRule = state.pricingRules.any((r) =>
+      r['color']?.toString().toLowerCase() == targetColor &&
+      (r['size']?.toString().toUpperCase() ?? 'A4') == targetSize
+    );
+    if (!hasSingleSizeRule && targetSize != 'A4') {
+      for (var rule in state.pricingRules) {
+        final rColor = rule['color']?.toString().toLowerCase();
+        final rSize = rule['size']?.toString().toUpperCase() ?? 'A4';
+        if (rColor == targetColor && rSize == 'A4') {
+          if (rule['sides'] == 'single') {
+            baseSinglePrice = double.tryParse(rule['price_per_page']?.toString() ?? '') ?? baseSinglePrice;
+          } else if (rule['sides'] == 'double') {
+            baseDoublePrice = double.tryParse(rule['price_per_page']?.toString() ?? '') ?? baseDoublePrice;
+          }
+          if (state.binding == 'spiral' || state.binding == 'hardcover') {
+            bindingPrice = double.tryParse(rule['binding_spiral_price']?.toString() ?? '') ?? bindingPrice;
+          }
+        }
       }
     }
     
     int totalPages = state.pages > 0 ? state.pages : 1;
-    int printedSides = (totalPages / state.pagesPerPaper).ceil();
+    if (state.pageRange.trim().isNotEmpty) {
+      totalPages = parsePageRangeCount(state.pageRange, state.pages);
+    }
+    int pagesPerPaper = state.pagesPerPaper > 0 ? state.pagesPerPaper : 1;
+    int printedSides = (totalPages / pagesPerPaper).ceil();
+
     if (printedSides < 1) printedSides = 1;
 
-    double docPrintCost = (basePrice * printedSides) * state.copies;
+    double sheetCost = 0.0;
+    if (state.sides == 'double') {
+      int fullDoubleSheets = printedSides ~/ 2;
+      int remainingSingleSides = printedSides % 2;
+      sheetCost = (fullDoubleSheets * baseDoublePrice) + (remainingSingleSides * baseSinglePrice);
+    } else {
+      sheetCost = printedSides * baseSinglePrice;
+    }
 
-    return double.parse((docPrintCost + bindingPrice).toStringAsFixed(2));
+    int validCopies = state.copies > 0 ? state.copies : 1;
+    double docPrintCost = (sheetCost * validCopies) + bindingPrice;
+
+    return double.parse(docPrintCost.toStringAsFixed(2));
   }
 
   void reset() {
