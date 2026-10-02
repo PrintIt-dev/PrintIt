@@ -1,7 +1,6 @@
 .agents
 .playwright-cli
 .vscode
-admin_portal
 backend
 docs
 node_modules
