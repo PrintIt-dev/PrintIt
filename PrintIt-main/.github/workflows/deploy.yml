@@ -1,0 +1,48 @@
+name: Production Auto Deploy
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    name: Deploy to Vercel & Render
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install Vercel CLI
+        run: npm install -g vercel@latest
+
+      - name: Deploy Customer Web (print-it-wp74)
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: |
+          vercel link --yes --project print-it-wp74 --scope printit2 --token $VERCEL_TOKEN
+          vercel deploy --prod --yes --token $VERCEL_TOKEN
+
+      - name: Deploy Shopkeeper Portal (printitshops)
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: |
+          # Allow shop_portal in vercelignore for this step
+          sed -i '/^shop_portal$/d' .vercelignore || true
+          vercel link --yes --project printitshops --scope printit2 --token $VERCEL_TOKEN
+          vercel deploy --prod --yes --token $VERCEL_TOKEN
+
+      - name: Trigger Render Backend Deploy (Optional)
+        if: ${{ secrets.RENDER_DEPLOY_HOOK != '' }}
+        env:
+          RENDER_HOOK: ${{ secrets.RENDER_DEPLOY_HOOK }}
+        run: |
+          echo "Triggering Render Backend Auto-Deploy..."
+          curl -sS -X POST "$RENDER_HOOK"
+          echo "Render deployment triggered successfully!"
