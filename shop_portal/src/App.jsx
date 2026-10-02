@@ -16,7 +16,8 @@ const Orders = lazy(() => import('./pages/dashboard/Orders'));
 const MyListings = lazy(() => import('./pages/dashboard/MyListings'));
 const ProductOrders = lazy(() => import('./pages/dashboard/ProductOrders'));
 const Pricing = lazy(() => import('./pages/dashboard/Pricing'));
-const Wallet = lazy(() => import('./pages/dashboard/Wallet'));
+// Wallet disabled — feature not yet available
+// const Wallet = lazy(() => import('./pages/dashboard/Wallet'));
 const Analytics = lazy(() => import('./pages/dashboard/Analytics'));
 const Settings = lazy(() => import('./pages/dashboard/Settings'));
 const PrintAgent = lazy(() => import('./pages/dashboard/PrintAgent'));
@@ -73,7 +74,8 @@ function App() {
             <Route path="listings" element={<MyListings />} />
             <Route path="product-orders" element={<ProductOrders />} />
             <Route path="pricing" element={<Pricing />} />
-            <Route path="wallet" element={<Wallet />} />
+            {/* Wallet disabled — feature not yet available */}
+            {/* <Route path="wallet" element={<Wallet />} /> */}
             <Route path="analytics" element={<Analytics />} />
             <Route path="settings" element={<Settings />} />
             <Route path="agent" element={<PrintAgent />} />

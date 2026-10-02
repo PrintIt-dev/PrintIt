@@ -28,8 +28,10 @@ const DashboardLayout = () => {
     { name: 'Orders', path: '/dashboard/orders', icon: 'shopping_cart' },
     { name: 'My Listings', path: '/dashboard/listings', icon: 'inventory_2' },
     { name: 'Pricing', path: '/dashboard/pricing', icon: 'payments' },
-    { name: 'Wallet & Payouts', path: '/dashboard/wallet', icon: 'account_balance_wallet' },
+    // Wallet disabled — feature not yet available
+    // { name: 'Wallet & Payouts', path: '/dashboard/wallet', icon: 'account_balance_wallet' },
     { name: 'Analytics', path: '/dashboard/analytics', icon: 'analytics' },
+    { name: 'Print Agent', path: '/dashboard/agent', icon: 'print_connect' },
     { name: 'Support & FAQ', path: '/dashboard/support', icon: 'help_outline' },
   ];
 
@@ -166,7 +168,7 @@ const DashboardLayout = () => {
 
             <div className="w-9 h-9 rounded-full bg-surface-container overflow-hidden border border-glass-edge shrink-0">
               <img
-                alt="User Avatar"
+                alt="Partner Profile Avatar"
                 width="36"
                 height="36"
                 loading="eager"

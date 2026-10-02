@@ -8,7 +8,8 @@ import '../../core/theme/app_theme.dart';
 import '../../shared/widgets/ambient_background.dart';
 import '../../shared/widgets/glass_container.dart';
 import '../auth/auth_provider.dart';
-import '../wallet/wallet_provider.dart';
+// Wallet disabled — feature not yet available
+// import '../wallet/wallet_provider.dart';
 import '../orders/order_history_screen.dart';
 import 'notification_settings_provider.dart';
 import '../../core/api/api_client.dart';
@@ -225,85 +226,41 @@ class ProfileScreen extends ConsumerWidget {
                   builder: (context) {
                     final ordersAsync = ref.watch(orderHistoryProvider);
                     final ordersCount = ordersAsync.value?.length ?? 0;
-                    final walletAsync = ref.watch(walletProvider);
-                    final walletBalance = walletAsync.value?['balance']?.toString() ?? '0.00';
 
-                    return Row(
-                      children: [
-                        Expanded(
-                          child: GestureDetector(
-                            onTap: () => context.push('/orders'),
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(vertical: 12),
-                              decoration: BoxDecoration(
-                                color: isDark
-                                    ? Colors.white.withValues(alpha: 0.06)
-                                    : const Color(0xFFF1F5F9),
-                                borderRadius: BorderRadius.circular(16),
-                              ),
-                              child: Column(
-                                children: [
-                                  Text(
-                                    '$ordersCount',
-                                    style: const TextStyle(
-                                      fontSize: 22,
-                                      fontWeight: FontWeight.bold,
-                                      color: AppTheme.logoBlue,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 2),
-                                  Text(
-                                    'MY ORDERS',
-                                    style: TextStyle(
-                                      fontSize: 11,
-                                      fontWeight: FontWeight.w600,
-                                      color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
-                                      letterSpacing: 1.2,
-                                    ),
-                                  ),
-                                ],
+                    return GestureDetector(
+                      onTap: () => context.push('/orders'),
+                      child: Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        decoration: BoxDecoration(
+                          color: isDark
+                              ? Colors.white.withValues(alpha: 0.06)
+                              : const Color(0xFFF1F5F9),
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        child: Column(
+                          children: [
+                            Text(
+                              '$ordersCount',
+                              style: const TextStyle(
+                                fontSize: 22,
+                                fontWeight: FontWeight.bold,
+                                color: AppTheme.logoBlue,
                               ),
                             ),
-                          ),
-                        ),
-                        const SizedBox(width: 16),
-                        Expanded(
-                          child: GestureDetector(
-                            onTap: () => context.push('/wallet'),
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(vertical: 12),
-                              decoration: BoxDecoration(
-                                color: isDark
-                                    ? Colors.white.withValues(alpha: 0.06)
-                                    : const Color(0xFFF1F5F9),
-                                borderRadius: BorderRadius.circular(16),
-                              ),
-                              child: Column(
-                                children: [
-                                  Text(
-                                    '₹$walletBalance',
-                                    style: const TextStyle(
-                                      fontSize: 22,
-                                      fontWeight: FontWeight.bold,
-                                      color: AppTheme.logoBlue,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 2),
-                                  Text(
-                                    'WALLET',
-                                    style: TextStyle(
-                                      fontSize: 11,
-                                      fontWeight: FontWeight.w600,
-                                      color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
-                                      letterSpacing: 1.2,
-                                    ),
-                                  ),
-                                ],
+                            const SizedBox(height: 2),
+                            Text(
+                              'MY ORDERS',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                                color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+                                letterSpacing: 1.2,
                               ),
                             ),
-                          ),
+                          ],
                         ),
-                      ],
+                      ),
                     );
                   },
                 ),
@@ -420,78 +377,6 @@ class ProfileScreen extends ConsumerWidget {
           ),
 
           const SizedBox(height: 32),
-
-          // Wallet History Section
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              const Padding(
-                padding: EdgeInsets.only(left: 8.0),
-                child: Text(
-                  'WALLET HISTORY',
-                  style: TextStyle(
-                    color: AppTheme.logoBlue,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    letterSpacing: 1.5,
-                  ),
-                ),
-              ),
-              TextButton(
-                onPressed: () => context.push('/wallet'),
-                style: TextButton.styleFrom(
-                  foregroundColor: AppTheme.logoBlue,
-                  padding: const EdgeInsets.symmetric(horizontal: 8),
-                  minimumSize: Size.zero,
-                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                ),
-                child: const Text('View Wallet', style: TextStyle(fontSize: 12)),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          
-          ref.watch(walletProvider).when(
-            data: (data) {
-              final transactions = data['transactions'] as List<dynamic>? ?? [];
-              if (transactions.isEmpty) {
-                return Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 24.0),
-                  child: Center(
-                    child: Text('No transactions yet', style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant)),
-                  ),
-                );
-              }
-              
-              return Column(
-                children: transactions.take(3).map((tx) {
-                  final isCredit = tx['type'] == 'refund' || tx['type'] == 'topup';
-                  String title = tx['type'].toString().toUpperCase();
-                  if (tx['type'] == 'topup') title = 'Added Funds';
-                  if (tx['type'] == 'payment') title = 'Payment';
-                  
-                  return Padding(
-                    padding: const EdgeInsets.only(bottom: 8.0),
-                    child: _buildWalletHistoryCard(
-                      context,
-                      title: title,
-                      date: tx['created_at'].toString().substring(0, 10),
-                      amount: '${isCredit ? '+' : '-'}₹${tx['amount']}',
-                      isCredit: isCredit,
-                      icon: isCredit ? Icons.account_balance_wallet : Icons.receipt_long,
-                    ),
-                  );
-                }).toList(),
-              );
-            },
-            loading: () => const Center(child: Padding(
-              padding: EdgeInsets.all(24.0),
-              child: CircularProgressIndicator(color: AppTheme.logoBlue),
-            )),
-            error: (e, st) => Center(child: Text('Error loading wallet history', style: TextStyle(color: Colors.redAccent))),
-          ),
-
-          const SizedBox(height: 32),
           
           // Sign Out Button (Border-free full-filled frosted button)
           SizedBox(
@@ -597,67 +482,6 @@ class ProfileScreen extends ConsumerWidget {
     );
   }
 
-  Widget _buildWalletHistoryCard(BuildContext context, {required String title, required String date, required String amount, required bool isCredit, required IconData icon}) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    return GlassContainer(
-      borderRadius: 18,
-      padding: const EdgeInsets.all(16),
-      child: Row(
-        children: [
-          Container(
-            width: 48,
-            height: 48,
-            decoration: BoxDecoration(
-              color: isDark ? Colors.white.withValues(alpha: 0.06) : const Color(0xFFF1F5F9),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Icon(
-              icon,
-              color: isCredit
-                  ? (isDark ? const Color(0xFF38BDF8) : AppTheme.logoBlue)
-                  : (isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B)),
-            ),
-          ),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.bold,
-                    color: isDark ? Colors.white : Colors.black,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  date,
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          Text(
-            amount,
-            style: TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.bold,
-              color: isCredit
-                  ? (isDark ? const Color(0xFF34D399) : const Color(0xFF059669))
-                  : (isDark ? Colors.white : Colors.black),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
 
   Future<void> _confirmAccountDeletion(BuildContext context, WidgetRef ref) async {
     final confirmed = await showDialog<bool>(

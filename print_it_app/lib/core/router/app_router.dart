@@ -14,9 +14,10 @@ import '../../features/orders/order_history_screen.dart';
 import '../../features/orders/payment_failed_screen.dart';
 import '../../features/home/profile_screen.dart';
 import '../../features/home/edit_profile_screen.dart';
-import '../../features/wallet/wallet_screen.dart';
-import '../../features/wallet/wallet_success_screen.dart';
-import '../../features/wallet/wallet_failed_screen.dart';
+// Wallet disabled — feature not yet available
+// import '../../features/wallet/wallet_screen.dart';
+// import '../../features/wallet/wallet_success_screen.dart';
+// import '../../features/wallet/wallet_failed_screen.dart';
 import '../../features/orders/select_shop_screen.dart';
 import '../../features/notifications/notifications_screen.dart';
 import '../../features/support/help_support_screen.dart';
@@ -154,24 +155,25 @@ final appRouter = GoRouter(
       path: '/edit-profile',
       builder: (context, state) => const EditProfileScreen(),
     ),
-    GoRoute(
-      path: '/wallet',
-      builder: (context, state) => const WalletScreen(),
-    ),
-    GoRoute(
-      path: '/wallet-success',
-      builder: (context, state) {
-        final amount = state.uri.queryParameters['amount'] ?? '0';
-        return WalletSuccessScreen(amount: amount);
-      },
-    ),
-    GoRoute(
-      path: '/wallet-failed',
-      builder: (context, state) {
-        final error = state.uri.queryParameters['error'];
-        return WalletFailedScreen(errorMessage: error);
-      },
-    ),
+    // Wallet disabled — feature not yet available
+    // GoRoute(
+    //   path: '/wallet',
+    //   builder: (context, state) => const WalletScreen(),
+    // ),
+    // GoRoute(
+    //   path: '/wallet-success',
+    //   builder: (context, state) {
+    //     final amount = state.uri.queryParameters['amount'] ?? '0';
+    //     return WalletSuccessScreen(amount: amount);
+    //   },
+    // ),
+    // GoRoute(
+    //   path: '/wallet-failed',
+    //   builder: (context, state) {
+    //     final error = state.uri.queryParameters['error'];
+    //     return WalletFailedScreen(errorMessage: error);
+    //   },
+    // ),
     GoRoute(
       path: '/help',
       builder: (context, state) => const HelpSupportScreen(),
