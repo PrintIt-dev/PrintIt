@@ -9,11 +9,12 @@ const DashboardLayout = () => {
   const navigate = useNavigate();
 
   const navItems = [
+    { name: 'Dashboard & Sales', path: '/dashboard', icon: 'dashboard', end: true },
     { name: 'Add Shop', path: '/dashboard/shops/add', icon: 'add_business' },
     { name: 'Master Catalog', path: '/dashboard/catalog', icon: 'menu_book' },
-    { name: 'Payout Management', path: '/dashboard/payouts', icon: 'payments' },
+    { name: 'Payouts & Ledger', path: '/dashboard/payouts', icon: 'account_balance_wallet' },
     { name: 'Support Tickets', path: '/dashboard/support', icon: 'support_agent' },
-    { name: 'Compliance & Legal', path: '/dashboard/legal', icon: 'policy' },
+    { name: 'Compliance', path: '/dashboard/legal', icon: 'policy' },
   ];
 
   const handleLogout = () => {
@@ -21,62 +22,101 @@ const DashboardLayout = () => {
     navigate('/login');
   };
 
+  const getInitials = (name) => {
+    if (!name) return 'SA';
+    return name
+      .split(' ')
+      .map(n => n[0])
+      .join('')
+      .toUpperCase()
+      .slice(0, 2);
+  };
+
   return (
-    <div className="flex-1 flex flex-col h-screen overflow-hidden bg-background font-body-md">
+    <div className="flex flex-col h-screen overflow-hidden bg-background text-on-background font-body-md">
       <OfflineBanner />
+
       {/* Top Navigation Bar */}
-      <header className="bg-surface-dim text-on-surface flex justify-between items-center px-container-padding py-md w-full sticky top-0 z-50 border-b border-outline-variant/30">
-        <div className="flex items-center gap-2.5 px-4">
-          <img src="/logo_cropped.png" alt="PrintIt Logo" className="w-8 h-8 object-contain rounded-lg shadow-sm" />
-          <span className="font-headline-lg text-[20px] font-bold text-primary">
-            PrintIt | <span className="font-normal opacity-70 text-on-surface">Admin Portal</span>
+      <header className="h-16 px-4 sm:px-6 lg:px-8 bg-surface/85 backdrop-blur-md border-b border-outline-variant/30 sticky top-0 z-40 flex items-center justify-between shrink-0 shadow-xs">
+        {/* Brand / Logo */}
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 cursor-pointer" onClick={() => navigate('/dashboard')}>
+            <img src="/logo_cropped.png" alt="PrintIt Logo" className="w-8 h-8 object-contain rounded-lg shadow-xs" />
+            <span className="font-bold text-lg text-primary tracking-tight">
+              PrintIt
+            </span>
+          </div>
+          <span className="hidden sm:inline-block text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20">
+            Admin
           </span>
         </div>
 
-        {/* Desktop Nav */}
-        <nav className="hidden lg:flex items-center gap-lg">
+        {/* Desktop Navigation */}
+        <nav className="hidden xl:flex items-center gap-1.5 bg-surface-container-high/60 p-1 rounded-2xl border border-outline-variant/25">
           {navItems.map(item => (
             <NavLink 
               key={item.path}
-              to={item.path} 
-              className={({ isActive }) => `flex items-center gap-sm cursor-pointer transition-colors font-semibold ${isActive ? 'text-primary' : 'text-on-surface-variant hover:text-on-surface'}`}
+              to={item.path}
+              end={item.end}
+              className={({ isActive }) => `flex items-center gap-2 px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+                isActive 
+                  ? 'bg-primary text-on-primary shadow-xs font-bold' 
+                  : 'text-on-surface-variant hover:text-on-surface hover:bg-surface-variant'
+              }`}
             >
+              <span className="material-symbols-outlined text-[17px]">{item.icon}</span>
               <span>{item.name}</span>
             </NavLink>
           ))}
         </nav>
 
-        <div className="flex items-center gap-md px-4">
+        {/* User & Controls */}
+        <div className="flex items-center gap-3">
           <ThemeToggle />
-          <div className="flex items-center gap-sm">
-            <div className="text-right hidden sm:block">
-              <p className="font-label-md text-[10px] leading-none opacity-50 uppercase">Administrator</p>
-              <p className="font-body-sm text-body-sm font-semibold">{user?.full_name}</p>
+
+          {/* Admin Avatar Profile */}
+          <div className="hidden sm:flex items-center gap-2.5 pl-3 border-l border-outline-variant/30">
+            <div className="w-8 h-8 rounded-full bg-primary/15 text-primary border border-primary/30 flex items-center justify-center font-bold text-xs font-mono shadow-xs">
+              {getInitials(user?.full_name)}
+            </div>
+            <div className="text-left hidden md:block">
+              <p className="text-xs font-bold text-on-surface leading-tight">{user?.full_name || 'System Admin'}</p>
+              <p className="text-[10px] text-on-surface-variant leading-none mt-0.5">Administrator</p>
             </div>
           </div>
+
+          {/* Logout Button */}
           <button 
             onClick={handleLogout}
-            className="bg-surface-container-highest hover:bg-error-container hover:text-on-error-container transition-all px-4 py-2 rounded-lg font-label-md text-sm border border-outline-variant font-bold"
+            title="Log out of admin session"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold text-rose-500 hover:text-rose-600 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/25 transition-all cursor-pointer"
           >
-            LOGOUT
+            <span className="material-symbols-outlined text-[16px]">logout</span>
+            <span className="hidden sm:inline">Logout</span>
           </button>
         </div>
       </header>
 
-      {/* Main Content */}
-      <main className="flex-1 overflow-y-auto bg-surface">
+      {/* Main Page Content */}
+      <main className="flex-1 overflow-y-auto bg-background">
         <Outlet />
       </main>
 
-      {/* Mobile Bottom Navigation */}
-      <footer className="lg:hidden flex justify-around items-center px-md pb-md pt-sm bg-surface-container-lowest shadow-lg border-t border-outline-variant/20 overflow-x-auto">
+      {/* Mobile & Tablet Bottom Navigation Bar */}
+      <footer className="xl:hidden flex items-center justify-around px-2 py-2 bg-surface/95 backdrop-blur-md border-t border-outline-variant/30 overflow-x-auto shrink-0 shadow-lg">
         {navItems.map(item => (
           <NavLink 
             key={item.path}
-            to={item.path} 
-            className={({ isActive }) => `flex flex-col items-center justify-center flex-shrink-0 px-4 py-2 rounded-xl transition-colors font-semibold ${isActive ? 'bg-primary-container text-on-primary-container' : 'text-outline hover:text-on-surface'}`}
+            to={item.path}
+            end={item.end}
+            className={({ isActive }) => `flex flex-col items-center justify-center px-3 py-1 rounded-xl transition-all font-semibold ${
+              isActive 
+                ? 'text-primary font-bold' 
+                : 'text-on-surface-variant hover:text-on-surface'
+            }`}
           >
-            <span className="text-sm mt-1">{item.name}</span>
+            <span className="material-symbols-outlined text-[20px]">{item.icon}</span>
+            <span className="text-[10px] mt-0.5 whitespace-nowrap">{item.name}</span>
           </NavLink>
         ))}
       </footer>

@@ -28,7 +28,7 @@ const Login = () => {
       }
       
       login(token, user);
-      navigate('/dashboard/shops/add');
+      navigate('/dashboard');
     } catch (err) {
       const serverError = err.response?.data;
       const errorMsg = serverError?.details 
@@ -82,11 +82,30 @@ const Login = () => {
           <button 
             type="submit" 
             disabled={isLoading}
-            className="w-full bg-primary text-on-primary font-label-md py-4 rounded-lg mt-4 shadow-lg hover:-translate-y-0.5 transition-transform disabled:opacity-50 flex items-center justify-center font-bold"
+            className="w-full bg-primary text-on-primary font-label-md py-3.5 rounded-xl mt-2 shadow-lg hover:-translate-y-0.5 transition-transform disabled:opacity-50 flex items-center justify-center font-bold text-sm cursor-pointer"
           >
             {isLoading ? 'Signing In...' : 'Secure Login'}
           </button>
         </form>
+
+        <div className="mt-6 pt-6 border-t border-outline-variant/30 text-center">
+          <p className="text-xs text-on-surface-variant mb-3 font-medium">Testing or verifying UI designs?</p>
+          <button
+            type="button"
+            onClick={() => {
+              login('demo-admin-token', {
+                user_id: 'demo-admin-1',
+                full_name: 'System Admin',
+                email: 'admin@printit.com',
+                role: 'admin'
+              });
+              navigate('/dashboard');
+            }}
+            className="w-full py-2.5 px-4 rounded-xl border border-primary/40 bg-primary/10 hover:bg-primary/20 text-primary font-semibold text-xs transition-colors flex items-center justify-center gap-2 cursor-pointer"
+          >
+            <span>⚡ Enter Design Preview Mode (No Login Required)</span>
+          </button>
+        </div>
       </div>
     </div>
   );

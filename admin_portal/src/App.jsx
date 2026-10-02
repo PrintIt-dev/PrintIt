@@ -7,6 +7,7 @@ import Login from './pages/Login';
 
 // Defer loading admin sub-views until required
 const DashboardLayout = lazy(() => import('./layouts/DashboardLayout'));
+const DashboardOverview = lazy(() => import('./pages/DashboardOverview'));
 const AddShop = lazy(() => import('./pages/shops/AddShop'));
 const TicketList = lazy(() => import('./pages/support/TicketList'));
 const TicketDetail = lazy(() => import('./pages/support/TicketDetail'));
@@ -37,12 +38,12 @@ function App() {
     <ErrorBoundary>
       <Suspense fallback={<PageLoader />}>
         <Routes>
-          <Route path="/" element={<Navigate to="/login" replace />} />
+          <Route path="/" element={<Navigate to="/dashboard" replace />} />
           <Route path="/login" element={<Login />} />
           <Route path="/403" element={<Forbidden />} />
           
           <Route path="/dashboard" element={<ProtectedRoute><DashboardLayout /></ProtectedRoute>}>
-            <Route index element={<Navigate to="/dashboard/shops/add" replace />} />
+            <Route index element={<DashboardOverview />} />
             <Route path="shops/add" element={<AddShop />} />
             <Route path="catalog" element={<ProductCatalog />} />
             <Route path="payouts" element={<PayoutManagement />} />

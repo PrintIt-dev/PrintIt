@@ -14,6 +14,13 @@ export const AuthProvider = ({ children }) => {
 
   const checkAuth = async () => {
     const token = localStorage.getItem('admin_token');
+    if (token === 'demo-admin-token') {
+      setUser({ user_id: 'demo-admin-1', full_name: 'System Admin', email: 'admin@printit.com', role: 'admin' });
+      setIsAuthenticated(true);
+      setIsLoading(false);
+      return;
+    }
+
     if (token) {
       try {
         const res = await api.get('/auth/me');
@@ -33,6 +40,13 @@ export const AuthProvider = ({ children }) => {
     setIsAuthenticated(true);
   };
 
+  const enableDemoMode = () => {
+    const demoUser = { user_id: 'demo-admin-1', full_name: 'System Admin', email: 'admin@printit.com', role: 'admin' };
+    localStorage.setItem('admin_token', 'demo-admin-token');
+    setUser(demoUser);
+    setIsAuthenticated(true);
+  };
+
   const logout = () => {
     localStorage.removeItem('admin_token');
     setUser(null);
@@ -40,7 +54,7 @@ export const AuthProvider = ({ children }) => {
   };
 
   return (
-    <AuthContext.Provider value={{ user, isAuthenticated, isLoading, login, logout }}>
+    <AuthContext.Provider value={{ user, isAuthenticated, isLoading, login, logout, enableDemoMode }}>
       {!isLoading && children}
     </AuthContext.Provider>
   );
