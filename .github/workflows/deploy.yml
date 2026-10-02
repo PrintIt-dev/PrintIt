@@ -41,9 +41,8 @@ jobs:
       - name: Deploy Admin Portal (print-it)
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        working-directory: admin_portal
         run: |
-          # Remove admin_portal from vercelignore if present
-          sed -i '/^admin_portal$/d' .vercelignore || true
           vercel link --yes --project print-it --scope printit2 --token $VERCEL_TOKEN
           vercel deploy --prod --yes --token $VERCEL_TOKEN
 
