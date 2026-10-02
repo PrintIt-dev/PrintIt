@@ -5,6 +5,7 @@ import '../../core/api/api_client.dart';
 import 'store_models.dart';
 import 'store_cart_provider.dart';
 import 'store_product_detail_screen.dart';
+import '../auth/auth_provider.dart';
 
 class StoreCartSheet extends ConsumerStatefulWidget {
   const StoreCartSheet({super.key});
@@ -15,21 +16,31 @@ class StoreCartSheet extends ConsumerStatefulWidget {
 
 class _StoreCartSheetState extends ConsumerState<StoreCartSheet> {
   bool _isPlacingOrder = false;
+  Map<String, dynamic>? _placedOrder;
+  String? _checkoutError;
 
   static const Color emerald = Color(0xFF10B981);
 
   Future<void> _handleCheckout(StoreCartState cartState) async {
     if (cartState.isEmpty || cartState.shop == null) return;
 
-    setState(() => _isPlacingOrder = true);
+    setState(() {
+      _isPlacingOrder = true;
+      _checkoutError = null;
+    });
 
     try {
       final api = ref.read(apiProvider);
+      final authUser = ref.read(authProvider).user;
+      final guestEmail = authUser?['email']?.toString() ?? 'guest@printit.store';
+      final guestPhone = authUser?['phone']?.toString() ?? 'Counter Pickup';
 
       final payload = {
         'shop_id': cartState.shop!.shopId,
         'items': cartState.items.map((i) => i.toJson()).toList(),
         'payment_method': 'COD',
+        'guest_email': guestEmail,
+        'guest_phone': guestPhone,
         'payment_details': {
           'channel': 'cash_on_delivery',
         },
@@ -38,118 +49,197 @@ class _StoreCartSheetState extends ConsumerState<StoreCartSheet> {
       final res = await api.post('/store/orders', data: payload);
 
       if (res.statusCode == 201 && (res.data['success'] == true || res.data['order'] != null)) {
-        final orderData = res.data['order'] ?? res.data;
+        final orderData = (res.data['order'] ?? res.data) as Map<String, dynamic>;
 
         // Clear cart
         ref.read(storeCartProvider.notifier).clearCart();
 
         if (mounted) {
-          Navigator.of(context).pop(); // close sheet
-          _showPickupSuccessDialog(orderData);
+          setState(() {
+            _placedOrder = orderData;
+            _checkoutError = null;
+            _isPlacingOrder = false;
+          });
         }
       } else {
         throw Exception(res.data['error'] ?? 'Order checkout failed');
       }
     } catch (e) {
       if (mounted) {
+        final errMsg = e.toString().replaceAll('Exception: ', '');
+        setState(() {
+          _checkoutError = errMsg;
+          _isPlacingOrder = false;
+        });
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             backgroundColor: Colors.redAccent,
-            content: Text(e.toString().replaceAll('Exception: ', '')),
+            content: Text(errMsg),
           ),
         );
       }
     } finally {
-      if (mounted) {
+      if (mounted && _placedOrder == null) {
         setState(() => _isPlacingOrder = false);
       }
     }
   }
 
-  void _showPickupSuccessDialog(Map<String, dynamic> order) {
+  Widget _buildOrderConfirmationView(ThemeData theme, bool isDark, Map<String, dynamic> order) {
     final orderNum = order['order_number']?.toString() ??
-        (order['order_id'] != null ? '#${order['order_id'].toString().substring(0, 8).toUpperCase()}' : '');
+        (order['order_id'] != null ? '#${order['order_id'].toString().substring(0, 8).toUpperCase()}' : '#STORE-ORD');
+    final totalAmount = double.tryParse(order['total_amount']?.toString() ?? '') ?? 0.0;
+    final shopName = order['shop_name']?.toString() ?? 'the counter';
 
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-        contentPadding: const EdgeInsets.all(24),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 64,
-              height: 64,
+    return Container(
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.of(context).size.height * 0.88,
+      ),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF0F172A) : Colors.white,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Drag handle
+          Center(
+            child: Container(
+              margin: const EdgeInsets.only(bottom: 16),
+              width: 40,
+              height: 4,
               decoration: BoxDecoration(
-                color: emerald.withValues(alpha: 0.15),
-                shape: BoxShape.circle,
+                color: isDark ? Colors.white24 : Colors.black12,
+                borderRadius: BorderRadius.circular(2),
               ),
-              child: const Icon(Icons.check_circle_rounded, color: emerald, size: 38),
             ),
-            const SizedBox(height: 16),
-            const Text(
-              'Order Placed Successfully!',
-              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
-              textAlign: TextAlign.center,
+          ),
+
+          // Success Icon with ring
+          Container(
+            width: 72,
+            height: 72,
+            decoration: BoxDecoration(
+              color: emerald.withValues(alpha: 0.15),
+              shape: BoxShape.circle,
             ),
-            const SizedBox(height: 6),
-            Text(
-              'Your items are reserved at ${order['shop_name'] ?? 'the shop'}. Pay in cash upon counter collection.',
-              style: const TextStyle(fontSize: 12, color: Colors.grey),
-              textAlign: TextAlign.center,
+            child: const Icon(Icons.check_circle_rounded, color: emerald, size: 44),
+          ),
+          const SizedBox(height: 16),
+          const Text(
+            'Order Placed Successfully!',
+            style: TextStyle(fontWeight: FontWeight.w900, fontSize: 20),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Your items are reserved at $shopName. Pay cash upon counter collection.',
+            style: TextStyle(fontSize: 13, color: isDark ? Colors.white60 : Colors.black54),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 20),
+
+          // Order Reference Box
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: theme.colorScheme.primary.withValues(alpha: 0.08),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: theme.colorScheme.primary.withValues(alpha: 0.2)),
             ),
-            if (orderNum.isNotEmpty) ...[
-              const SizedBox(height: 16),
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
-                decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.08),
-                  borderRadius: BorderRadius.circular(14),
+            child: Column(
+              children: [
+                const Text(
+                  'ORDER REFERENCE NUMBER',
+                  style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: 1.2,
+                    color: Colors.grey,
+                  ),
                 ),
-                child: Column(
+                const SizedBox(height: 4),
+                Text(
+                  orderNum,
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w900,
+                    color: theme.colorScheme.primary,
+                  ),
+                ),
+                const Divider(height: 20),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    const Text(
-                      'ORDER REFERENCE',
-                      style: TextStyle(
-                        fontSize: 10,
-                        fontWeight: FontWeight.bold,
-                        letterSpacing: 1.0,
-                        color: Colors.grey,
+                    const Text('Payment Method', style: TextStyle(fontSize: 12, color: Colors.grey)),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: emerald.withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(6),
                       ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      orderNum,
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w800,
-                        color: Theme.of(context).colorScheme.primary,
-                      ),
+                      child: const Text('Cash on Delivery (COD)', style: TextStyle(color: emerald, fontWeight: FontWeight.bold, fontSize: 11)),
                     ),
                   ],
                 ),
+                if (totalAmount > 0) ...[
+                  const SizedBox(height: 8),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text('Payable at Counter', style: TextStyle(fontSize: 12, color: Colors.grey)),
+                      Text(
+                        '₹${totalAmount.toStringAsFixed(2)}',
+                        style: TextStyle(fontSize: 14, fontWeight: FontWeight.w900, color: theme.colorScheme.primary),
+                      ),
+                    ],
+                  ),
+                ],
+              ],
+            ),
+          ),
+
+          const SizedBox(height: 24),
+
+          // Primary Action: View My Store Orders
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton(
+              style: FilledButton.styleFrom(
+                backgroundColor: theme.colorScheme.primary,
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
               ),
-            ],
-            const SizedBox(height: 24),
-            SizedBox(
-              width: double.infinity,
-              child: FilledButton(
-                style: FilledButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                ),
-                onPressed: () {
-                  Navigator.of(ctx).pop();
-                  context.push('/store/orders');
-                },
-                child: const Text('View My Store Orders', style: TextStyle(fontWeight: FontWeight.bold)),
+              onPressed: () {
+                Navigator.of(context).pop();
+                context.push('/store/orders');
+              },
+              child: const Text(
+                'View My Store Orders',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
               ),
             ),
-          ],
-        ),
+          ),
+          const SizedBox(height: 10),
+
+          // Secondary Action: Done / Keep Browsing
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton(
+              style: OutlinedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              ),
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text(
+                'Continue Shopping',
+                style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -159,6 +249,10 @@ class _StoreCartSheetState extends ConsumerState<StoreCartSheet> {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
     final cartState = ref.watch(storeCartProvider);
+
+    if (_placedOrder != null) {
+      return _buildOrderConfirmationView(theme, isDark, _placedOrder!);
+    }
 
     return Container(
       constraints: BoxConstraints(
@@ -565,6 +659,31 @@ class _StoreCartSheetState extends ConsumerState<StoreCartSheet> {
                     ],
                   ),
           ),
+
+          if (_checkoutError != null)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                decoration: BoxDecoration(
+                  color: Colors.redAccent.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.redAccent.withValues(alpha: 0.4)),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.error_outline_rounded, color: Colors.redAccent, size: 20),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        _checkoutError!,
+                        style: const TextStyle(color: Colors.redAccent, fontSize: 12, fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
 
           // Bottom Checkout Button
           if (cartState.isNotEmpty)

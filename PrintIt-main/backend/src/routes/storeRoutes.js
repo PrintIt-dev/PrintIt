@@ -237,8 +237,15 @@ router.post('/orders', async (req, res) => {
         } catch (_) {}
     }
 
-    if (!customer_id && !guest_email && !guest_phone) {
-        return res.status(400).json({ error: 'Please sign in or provide contact details for your pickup receipt.' });
+    let finalGuestEmail = guest_email || null;
+    let finalGuestPhone = guest_phone || null;
+    if (!customer_id && !finalGuestEmail && !finalGuestPhone) {
+        if (normalizedPaymentMethod === 'COD') {
+            finalGuestEmail = 'guest@printit.store';
+            finalGuestPhone = 'Counter Pickup';
+        } else {
+            return res.status(400).json({ error: 'Please sign in or provide contact details for your pickup receipt.' });
+        }
     }
 
     const client = await pool.connect();
@@ -373,8 +380,8 @@ router.post('/orders', async (req, res) => {
                 pickupCode,
                 shop_id,
                 customer_id,
-                guest_email || null,
-                guest_phone || null,
+                finalGuestEmail || null,
+                finalGuestPhone || null,
                 computedTotal,
                 normalizedPaymentMethod,
                 paymentId,
