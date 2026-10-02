@@ -73,35 +73,26 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
 
     try {
       final api = ref.read(apiProvider);
-      
-      // We will check if the user is authenticated. 
-      // Based on that we call the correct endpoint. But for now we can just assume they are.
-      // Wait, let's use the guest endpoint if auth might not be available, or just standard.
-      // Assuming user is authenticated in this marketplace view:
-      final createRes = await api.post('/payments/create', data: {
-        'amount': amount,
+      final res = await api.post('/product-orders', data: {
+        'product_id': widget.manual['product_id'],
+        'quantity': quantity,
+        'amount_total': amount.toStringAsFixed(2),
+        'payment_method': 'COD',
       });
-      
-      final keyId = createRes.data['key_id'];
-      final razorpayOrderId = createRes.data['razorpay_order_id'];
 
-      var options = {
-        'key': keyId,
-        'amount': (amount * 100).toInt(),
-        'name': 'PrintIt Marketplace',
-        'description': 'Payment for ${widget.manual['title']}',
-        'order_id': razorpayOrderId,
-        'prefill': {
-          'contact': '',
-          'email': ''
-        }
-      };
-
-      _razorpay.open(options);
+      if (res.statusCode == 201) {
+        if (!mounted) return;
+        context.pushReplacement('/post-order', extra: res.data['order']);
+      } else {
+        throw Exception(res.data['error'] ?? 'Order creation failed');
+      }
     } catch (e) {
-      setState(() => _isProcessing = false);
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error preparing payment: $e')));
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Order failed: $e')));
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isProcessing = false);
       }
     }
   }
@@ -249,7 +240,7 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
                             onPressed: _isProcessing ? null : _processPayment,
                             child: _isProcessing 
                               ? const CircularProgressIndicator(color: Colors.white)
-                              : const Text('Pay & Order Now', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white)),
+                              : const Text('Place Order (COD)', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white)),
                           ),
                         ),
                       ],

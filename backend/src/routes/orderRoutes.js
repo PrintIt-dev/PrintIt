@@ -312,7 +312,7 @@ router.get('/', async (req, res) => {
 
         if (req.user.role === 'customer') {
             result = await pool.query(
-                'SELECT order_id, customer_id, shop_id, files, print_options, status, queue_position, amount_total, payment_status, created_at, updated_at, completed_at, files_deleted, cancelled_at, payment_id, pickup_qr, print_instructions, refund_status, refund_id, print_mode, files_deleted_at, deletion_status, secure_expires_at FROM orders WHERE customer_id = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3',
+                'SELECT order_id, customer_id, shop_id, files, print_options, status, queue_position, amount_total, payment_status, created_at, updated_at, completed_at, files_deleted, cancelled_at, payment_id, print_instructions, refund_status, refund_id, print_mode, files_deleted_at, deletion_status, secure_expires_at FROM orders WHERE customer_id = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3',
                 [req.user.user_id, limit, offset]
             );
             countResult = await pool.query('SELECT COUNT(*) FROM orders WHERE customer_id = $1', [req.user.user_id]);
@@ -323,13 +323,13 @@ router.get('/', async (req, res) => {
                 return res.json({ data: [], pagination: { page, limit, total_items: 0, total_pages: 0 } });
             }
             result = await pool.query(
-                'SELECT order_id, customer_id, shop_id, files, print_options, status, queue_position, amount_total, payment_status, created_at, updated_at, completed_at, files_deleted, cancelled_at, payment_id, pickup_qr, print_instructions, refund_status, refund_id, print_mode, files_deleted_at, deletion_status, secure_expires_at FROM orders WHERE shop_id = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3',
+                'SELECT order_id, customer_id, shop_id, files, print_options, status, queue_position, amount_total, payment_status, created_at, updated_at, completed_at, files_deleted, cancelled_at, payment_id, print_instructions, refund_status, refund_id, print_mode, files_deleted_at, deletion_status, secure_expires_at FROM orders WHERE shop_id = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3',
                 [shopId, limit, offset]
             );
             countResult = await pool.query('SELECT COUNT(*) FROM orders WHERE shop_id = $1', [shopId]);
         } else if (req.user.role === 'admin') {
             result = await pool.query(
-                'SELECT order_id, customer_id, shop_id, files, print_options, status, queue_position, amount_total, payment_status, created_at, updated_at, completed_at, files_deleted, cancelled_at, payment_id, pickup_qr, print_instructions, refund_status, refund_id, print_mode, files_deleted_at, deletion_status, secure_expires_at FROM orders ORDER BY created_at DESC LIMIT $1 OFFSET $2',
+                'SELECT order_id, customer_id, shop_id, files, print_options, status, queue_position, amount_total, payment_status, created_at, updated_at, completed_at, files_deleted, cancelled_at, payment_id, print_instructions, refund_status, refund_id, print_mode, files_deleted_at, deletion_status, secure_expires_at FROM orders ORDER BY created_at DESC LIMIT $1 OFFSET $2',
                 [limit, offset]
             );
             countResult = await pool.query('SELECT COUNT(*) FROM orders');
@@ -363,7 +363,7 @@ router.get('/:id', async (req, res) => {
 
     try {
         const result = await pool.query(
-            'SELECT order_id, customer_id, shop_id, files, print_options, status, queue_position, amount_total, payment_status, created_at, updated_at, completed_at, files_deleted, cancelled_at, payment_id, pickup_qr, print_instructions, refund_status, refund_id, print_mode, files_deleted_at, deletion_status, secure_expires_at FROM orders WHERE order_id = $1',
+            'SELECT order_id, customer_id, shop_id, files, print_options, status, queue_position, amount_total, payment_status, created_at, updated_at, completed_at, files_deleted, cancelled_at, payment_id, print_instructions, refund_status, refund_id, print_mode, files_deleted_at, deletion_status, secure_expires_at FROM orders WHERE order_id = $1',
             [id]
         );
 
@@ -473,7 +473,7 @@ router.patch('/:id/cancel', roleCheck('customer'), async (req, res) => {
 
         // 1. Fetch order and verify ownership & status
         const orderResult = await client.query(
-            'SELECT order_id, customer_id, shop_id, files, print_options, status, queue_position, amount_total, payment_status, created_at, updated_at, completed_at, files_deleted, cancelled_at, payment_id, pickup_qr, print_instructions, refund_status, refund_id FROM orders WHERE order_id = $1 FOR UPDATE',
+            'SELECT order_id, customer_id, shop_id, files, print_options, status, queue_position, amount_total, payment_status, created_at, updated_at, completed_at, files_deleted, cancelled_at, payment_id, print_instructions, refund_status, refund_id FROM orders WHERE order_id = $1 FOR UPDATE',
             [id]
         );
 

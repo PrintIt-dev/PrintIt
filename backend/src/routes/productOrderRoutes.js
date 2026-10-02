@@ -17,9 +17,10 @@ router.use(roleCheck('customer'));
  * @access  Private (Customer)
  */
 router.post('/', async (req, res) => {
-    const { product_id, quantity, amount_total, payment_id, razorpay_payment_id, razorpay_order_id, razorpay_signature } = req.body;
+    const { product_id, quantity, amount_total, payment_id, razorpay_payment_id, razorpay_order_id, razorpay_signature, payment_method } = req.body;
+    const isCOD = payment_method?.toUpperCase() === 'COD' || (!payment_id && !razorpay_payment_id);
 
-    const targetPaymentId = razorpay_payment_id || payment_id;
+    const targetPaymentId = razorpay_payment_id || payment_id || (isCOD ? `COD-${Date.now()}` : null);
     if (!targetPaymentId) {
         return res.status(400).json({ error: 'Payment ID is required' });
     }
@@ -80,7 +81,9 @@ router.post('/', async (req, res) => {
         }
 
         // Log payment if signature was valid (which we checked above)
-        if (razorpay_signature) {
+        if (isCOD) {
+            // Cash on Delivery — no online payment capture check needed
+        } else if (razorpay_signature) {
             // Verify payment directly with Razorpay API if not in mock test mode
             let actualPaid = totalExpectedAmount;
             if (!(process.env.NODE_ENV === 'test' && process.env.ALLOW_MOCK_PAYMENTS === 'true' && razorpay_signature === 'mock_signature')) {
@@ -156,9 +159,9 @@ router.post('/', async (req, res) => {
         const orderResult = await client.query(
             `INSERT INTO product_orders (
                 product_id, shop_id, customer_id, quantity, amount_total, payment_id, payment_status, status
-            ) VALUES ($1, $2, $3, $4, $5, $6, 'captured', 'confirmed')
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, 'confirmed')
             RETURNING *`,
-            [product_id, shop_id, req.user.user_id, quantity, totalExpectedAmount, targetPaymentId]
+            [product_id, shop_id, req.user.user_id, quantity, totalExpectedAmount, targetPaymentId, isCOD ? 'pending' : 'captured']
         );
 
         await client.query('COMMIT');

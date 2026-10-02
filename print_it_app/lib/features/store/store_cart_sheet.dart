@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../core/api/api_client.dart';
-import '../wallet/wallet_provider.dart';
 import 'store_models.dart';
 import 'store_cart_provider.dart';
 import 'store_product_detail_screen.dart';
@@ -15,7 +14,6 @@ class StoreCartSheet extends ConsumerStatefulWidget {
 }
 
 class _StoreCartSheetState extends ConsumerState<StoreCartSheet> {
-  String _paymentMethod = 'wallet'; // 'wallet' | 'razorpay'
   bool _isPlacingOrder = false;
 
   static const Color emerald = Color(0xFF10B981);
@@ -31,26 +29,23 @@ class _StoreCartSheetState extends ConsumerState<StoreCartSheet> {
       final payload = {
         'shop_id': cartState.shop!.shopId,
         'items': cartState.items.map((i) => i.toJson()).toList(),
-        'payment_method': _paymentMethod,
+        'payment_method': 'COD',
         'payment_details': {
-          'channel': _paymentMethod == 'wallet' ? 'in_app_wallet' : 'online_upi',
+          'channel': 'cash_on_delivery',
         },
       };
 
       final res = await api.post('/store/orders', data: payload);
 
-      if (res.statusCode == 201 && res.data['success'] == true) {
-        final orderData = res.data['order'];
-        final pickupCode = res.data['pickup_code']?.toString() ?? orderData['pickup_code']?.toString() ?? '----';
+      if (res.statusCode == 201 && (res.data['success'] == true || res.data['order'] != null)) {
+        final orderData = res.data['order'] ?? res.data;
 
         // Clear cart
         ref.read(storeCartProvider.notifier).clearCart();
-        // Refresh wallet
-        ref.invalidate(walletProvider);
 
         if (mounted) {
           Navigator.of(context).pop(); // close sheet
-          _showPickupSuccessDialog(orderData, pickupCode);
+          _showPickupSuccessDialog(orderData);
         }
       } else {
         throw Exception(res.data['error'] ?? 'Order checkout failed');
@@ -71,7 +66,10 @@ class _StoreCartSheetState extends ConsumerState<StoreCartSheet> {
     }
   }
 
-  void _showPickupSuccessDialog(Map<String, dynamic> order, String pickupCode) {
+  void _showPickupSuccessDialog(Map<String, dynamic> order) {
+    final orderNum = order['order_number']?.toString() ??
+        (order['order_id'] != null ? '#${order['order_id'].toString().substring(0, 8).toUpperCase()}' : '');
+
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -98,50 +96,43 @@ class _StoreCartSheetState extends ConsumerState<StoreCartSheet> {
             ),
             const SizedBox(height: 6),
             Text(
-              'Your items are reserved at ${order['shop_name'] ?? 'the shop'}.',
+              'Your items are reserved at ${order['shop_name'] ?? 'the shop'}. Pay in cash upon counter collection.',
               style: const TextStyle(fontSize: 12, color: Colors.grey),
               textAlign: TextAlign.center,
             ),
-            const SizedBox(height: 20),
-
-            // 4-Digit Pickup Code Card
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(vertical: 16),
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.12),
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: Column(
-                children: [
-                  const Text(
-                    'YOUR 4-DIGIT PICKUP CODE',
-                    style: TextStyle(
-                      fontSize: 10,
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: 1.2,
-                      color: Colors.grey,
+            if (orderNum.isNotEmpty) ...[
+              const SizedBox(height: 16),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Column(
+                  children: [
+                    const Text(
+                      'ORDER REFERENCE',
+                      style: TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 1.0,
+                        color: Colors.grey,
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    pickupCode,
-                    style: TextStyle(
-                      fontSize: 32,
-                      fontWeight: FontWeight.w900,
-                      letterSpacing: 8,
-                      color: Theme.of(context).colorScheme.primary,
+                    const SizedBox(height: 4),
+                    Text(
+                      orderNum,
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w800,
+                        color: Theme.of(context).colorScheme.primary,
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 6),
-                  const Text(
-                    'Show this code at the shop counter',
-                    style: TextStyle(fontSize: 11, color: Colors.grey),
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ),
-
+            ],
             const SizedBox(height: 24),
             SizedBox(
               width: double.infinity,
@@ -168,15 +159,6 @@ class _StoreCartSheetState extends ConsumerState<StoreCartSheet> {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
     final cartState = ref.watch(storeCartProvider);
-    final walletAsync = ref.watch(walletProvider);
-
-    final walletBalance = walletAsync.when(
-      data: (data) => double.tryParse(data['balance']?.toString() ?? '0') ?? 0.0,
-      loading: () => 0.0,
-      error: (_, _) => 0.0,
-    );
-
-    final isWalletInsufficient = _paymentMethod == 'wallet' && walletBalance < cartState.grandTotal;
 
     return Container(
       constraints: BoxConstraints(
@@ -398,9 +380,89 @@ class _StoreCartSheetState extends ConsumerState<StoreCartSheet> {
 
                       const SizedBox(height: 16),
 
-                      // Payment Method Selector
+                      // Pickup Mode Selector
                       Text(
-                        'PAYMENT METHOD (100% PREPAID)',
+                        'COLLECTION PREFERENCE',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: 0.8,
+                          color: isDark ? Colors.white54 : Colors.black54,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                              decoration: BoxDecoration(
+                                color: theme.colorScheme.primary.withValues(alpha: 0.12),
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(
+                                  color: theme.colorScheme.primary.withValues(alpha: 0.5),
+                                  width: 1.0,
+                                ),
+                              ),
+                              child: Row(
+                                children: [
+                                  Icon(Icons.storefront_rounded, size: 18, color: theme.colorScheme.primary),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(
+                                      'Counter Pickup',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.bold,
+                                        color: isDark ? Colors.white : Colors.black87,
+                                      ),
+                                    ),
+                                  ),
+                                  Icon(Icons.check_circle_rounded, size: 16, color: theme.colorScheme.primary),
+                                ],
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                              decoration: BoxDecoration(
+                                color: isDark ? Colors.white.withValues(alpha: 0.03) : const Color(0xFFF8FAFC),
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(color: Colors.grey.withValues(alpha: 0.2)),
+                              ),
+                              child: const Row(
+                                children: [
+                                  Icon(Icons.schedule_rounded, size: 18, color: Colors.grey),
+                                  SizedBox(width: 8),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          'Schedule',
+                                          style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.grey),
+                                        ),
+                                        Text(
+                                          'Coming Soon',
+                                          style: TextStyle(fontSize: 9, color: Colors.amber, fontWeight: FontWeight.w600),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+
+                      const SizedBox(height: 16),
+
+                      // Payment Method Selector (COD Only for Store Orders)
+                      Text(
+                        'PAYMENT METHOD',
                         style: TextStyle(
                           fontSize: 11,
                           fontWeight: FontWeight.bold,
@@ -410,100 +472,46 @@ class _StoreCartSheetState extends ConsumerState<StoreCartSheet> {
                       ),
                       const SizedBox(height: 8),
 
-                      // Wallet Option
-                      GestureDetector(
-                        onTap: () => setState(() => _paymentMethod = 'wallet'),
-                        child: Container(
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: _paymentMethod == 'wallet'
-                                ? theme.colorScheme.primary.withValues(alpha: 0.12)
-                                : (isDark ? Colors.white.withValues(alpha: 0.05) : const Color(0xFFF1F5F9)),
-                            borderRadius: BorderRadius.circular(16),
-                            border: Border.all(
-                              color: _paymentMethod == 'wallet'
-                                  ? theme.colorScheme.primary.withValues(alpha: 0.6)
-                                  : Colors.transparent,
-                              width: 1.0,
-                            ),
-                          ),
-                          child: Row(
-                            children: [
-                              Icon(
-                                Icons.account_balance_wallet_rounded,
-                                color: _paymentMethod == 'wallet' ? theme.colorScheme.primary : Colors.grey,
-                                size: 22,
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    const Text('PrintIt Wallet', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                                    Text(
-                                      'Available Balance: ₹${walletBalance.toStringAsFixed(2)}',
-                                      style: TextStyle(
-                                        fontSize: 11,
-                                        color: isWalletInsufficient ? Colors.redAccent : (isDark ? Colors.white54 : Colors.black54),
-                                        fontWeight: isWalletInsufficient ? FontWeight.bold : FontWeight.normal,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              Radio<String>(
-                                value: 'wallet',
-                                groupValue: _paymentMethod,
-                                onChanged: (val) => setState(() => _paymentMethod = val!),
-                              ),
-                            ],
+                      // COD Option
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: theme.colorScheme.primary.withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(
+                            color: theme.colorScheme.primary.withValues(alpha: 0.6),
+                            width: 1.0,
                           ),
                         ),
-                      ),
-
-                      const SizedBox(height: 8),
-
-                      // UPI / Online Gateway Option
-                      GestureDetector(
-                        onTap: () => setState(() => _paymentMethod = 'razorpay'),
-                        child: Container(
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: _paymentMethod == 'razorpay'
-                                ? theme.colorScheme.primary.withValues(alpha: 0.12)
-                                : (isDark ? Colors.white.withValues(alpha: 0.05) : const Color(0xFFF1F5F9)),
-                            borderRadius: BorderRadius.circular(16),
-                            border: Border.all(
-                              color: _paymentMethod == 'razorpay'
-                                  ? theme.colorScheme.primary.withValues(alpha: 0.6)
-                                  : Colors.transparent,
-                              width: 1.0,
+                        child: Row(
+                          children: [
+                            Icon(
+                              Icons.payments_outlined,
+                              color: theme.colorScheme.primary,
+                              size: 22,
                             ),
-                          ),
-                          child: Row(
-                            children: [
-                              Icon(
-                                Icons.payment_rounded,
-                                color: _paymentMethod == 'razorpay' ? theme.colorScheme.primary : Colors.grey,
-                                size: 22,
+                            const SizedBox(width: 12),
+                            const Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Cash on Delivery (COD)',
+                                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                                  ),
+                                  Text(
+                                    'Pay in cash upon counter collection at the shop',
+                                    style: TextStyle(fontSize: 11, color: Colors.grey),
+                                  ),
+                                ],
                               ),
-                              const SizedBox(width: 12),
-                              const Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text('UPI / Cards / NetBanking', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                                    Text('Instant secure online payment', style: TextStyle(fontSize: 11, color: Colors.grey)),
-                                  ],
-                                ),
-                              ),
-                              Radio<String>(
-                                value: 'razorpay',
-                                groupValue: _paymentMethod,
-                                onChanged: (val) => setState(() => _paymentMethod = val!),
-                              ),
-                            ],
-                          ),
+                            ),
+                            Icon(
+                              Icons.check_circle_rounded,
+                              color: theme.colorScheme.primary,
+                              size: 22,
+                            ),
+                          ],
                         ),
                       ),
 
@@ -540,7 +548,7 @@ class _StoreCartSheetState extends ConsumerState<StoreCartSheet> {
                             Row(
                               mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
-                                const Text('Total Payable', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+                                const Text('Payable at Pickup (COD)', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
                                 Text(
                                   '₹${cartState.grandTotal.toStringAsFixed(2)}',
                                   style: TextStyle(
@@ -570,7 +578,7 @@ class _StoreCartSheetState extends ConsumerState<StoreCartSheet> {
                     padding: const EdgeInsets.symmetric(vertical: 16),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                   ),
-                  onPressed: _isPlacingOrder || isWalletInsufficient
+                  onPressed: _isPlacingOrder
                       ? null
                       : () => _handleCheckout(cartState),
                   child: _isPlacingOrder
@@ -580,9 +588,7 @@ class _StoreCartSheetState extends ConsumerState<StoreCartSheet> {
                           child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
                         )
                       : Text(
-                          isWalletInsufficient
-                              ? 'Insufficient Wallet Balance (Add Money)'
-                              : 'Place Order & Pay ₹${cartState.grandTotal.toStringAsFixed(0)}',
+                          'Place Store Order (COD) • ₹${cartState.grandTotal.toStringAsFixed(0)}',
                           style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
                         ),
                 ),

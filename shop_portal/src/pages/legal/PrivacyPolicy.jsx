@@ -161,7 +161,7 @@ const PrivacyPolicy = () => {
               <li>Dispatching print jobs and specifications to your chosen partner print shop.</li>
               <li>Streaming real-time order queue progress via Server-Sent Events (SSE) and FCM push alerts.</li>
               <li>Processing online checkouts, in-app wallet deductions, and automated instant cancellation refunds.</li>
-              <li>Generating cryptographic verification QR codes and 4-digit pickup PINs for secure in-person handover.</li>
+              <li>Generating 4-digit pickup PINs and order reference identifiers for secure in-person handover.</li>
               <li>Facilitating customer support inquiries, reprint requests, and dispute investigations.</li>
             </ul>
           </section>

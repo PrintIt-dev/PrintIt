@@ -222,7 +222,7 @@ router.patch('/orders/:id/cancel', publicOrderLimiter, async (req, res) => {
 
         // 1. Fetch order and verify ownership & status
         const orderResult = await client.query(
-            'SELECT order_id, customer_id, shop_id, files, print_options, status, queue_position, amount_total, payment_status, created_at, updated_at, completed_at, files_deleted, cancelled_at, payment_id, pickup_qr, print_instructions, refund_status, refund_id, cancel_token FROM orders WHERE order_id = $1 FOR UPDATE',
+            'SELECT order_id, customer_id, shop_id, files, print_options, status, queue_position, amount_total, payment_status, created_at, updated_at, completed_at, files_deleted, cancelled_at, payment_id, print_instructions, refund_status, refund_id, cancel_token FROM orders WHERE order_id = $1 FOR UPDATE',
             [id]
         );
 

@@ -77,7 +77,7 @@ Print shop owners get a clean digital dashboard that notifies them of incoming p
   - If an order is ever canceled, your money is refunded back to your wallet instantly.
 - **Live Order Progress & Notifications**:
   - Receive automatic mobile alerts when the shop starts printing, when it is finished, and when it is ready for collection.
-  - View a digital **Pickup QR Code** in the app. Show this code to the shopkeeper for a quick, zero-contact collection.
+  - Collect your finished order at the counter with your order ID or 4-digit pickup PIN.
 - **Stationery Marketplace**: Browse and order notebooks, pens, paper reams, envelopes, or custom merchandise directly from shops.
 - **Customer Support Desk**: Open a support request directly inside the app if you ever have a problem with an order or payment.
 
@@ -122,7 +122,7 @@ Print shop owners get a clean digital dashboard that notifies them of incoming p
 3. **Step 3: Customize Print Options** — Select B&W or Color, paper size, page numbers, copies, and binding style.
 4. **Step 4: Check Cost & Pay** — Review the price breakdown and tap **Pay with Wallet**.
 5. **Step 5: Real-Time Printing** — The shop gets an audio alert, prints your document according to your settings, and marks it as ready.
-6. **Step 6: Pickup or Receive Delivery** — Walk into the shop, show your Pickup QR code on your phone screen, collect your printed documents, and walk out!
+6. **Step 6: Pickup or Receive Delivery** — Walk into the shop counter, provide your order details or 4-digit pickup PIN, collect your printed documents, and walk out!
 
 ---
 
@@ -166,4 +166,4 @@ Print shop owners get a clean digital dashboard that notifies them of incoming p
 | **Time Saved** | No waiting in physical queues; drop by only when prints are ready. | Less time spent manually taking orders, emailing files, or calculating prices. |
 | **Clarity** | See exact costs upfront before spending money. | Automated price calculation reduces manual calculation errors. |
 | **Convenience** | Upload from home, office, or anywhere on your phone. | Clear digital queue shows all active jobs in one place. |
-| **Safety & Trust** | Guaranteed instant refunds for canceled orders & zero-contact QR pickup. | Secured payments and direct earnings withdrawals to bank accounts. |
+| **Safety & Trust** | Guaranteed instant refunds for canceled orders & hassle-free counter pickup. | Secured payments and direct earnings withdrawals to bank accounts. |

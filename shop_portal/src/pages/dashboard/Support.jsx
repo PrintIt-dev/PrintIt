@@ -10,8 +10,8 @@ const PartnerSupport = () => {
       a: 'When an incoming print job arrives in your Live Queue, review the document specifications (color, page count, binding). Click "Start Printing" to notify the customer that printing is underway, and then click "Mark Ready" once the prints are packed and ready for pickup.'
     },
     {
-      q: 'How does pickup verification work with the customer QR code?',
-      a: 'When the customer arrives at your shop, ask them to display their in-app Order Verification QR code. Scan the code using your mobile scanner or verify the 4-digit order token displayed on the order ticket to confirm handover.'
+      q: 'How does order handover and pickup verification work?',
+      a: 'When the customer arrives at your shop counter, verify the order ID or 4-digit pickup PIN displayed on their order screen to confirm handover before marking the order as collected.'
     },
     {
       q: 'How and when are shop earnings paid out?',

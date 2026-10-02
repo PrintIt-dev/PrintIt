@@ -105,7 +105,6 @@ The platform consists of five distinct sub-systems:
   - Automatic refund processing on order cancellations.
 - **Order Tracking & Notifications**:
   - Real-time status progress (`Queued` ➔ `Printing` ➔ `Ready/Out for Delivery` ➔ `Completed`).
-  - QR Code generation for contact-free pickup verification.
   - FCM Push Notifications on status updates.
 - **Marketplace Shopping**:
   - Product catalog browsing (Stationery, office supplies, printed merchandise).
@@ -177,7 +176,7 @@ The platform consists of five distinct sub-systems:
 3. **Quotation**: System calculates total price based on the targeted shop's active pricing rules.
 4. **Payment**: Customer approves total and pays using Wallet balance or Razorpay.
 5. **Queueing**: Order enters shop queue with position index.
-6. **Execution & Handover**: Shop accepts order, prints file, updates status, and presents order for QR pickup or delivery.
+6. **Execution & Handover**: Shop accepts order, prints file, updates status, and presents order for counter pickup or delivery.
 
 ---
 
@@ -187,7 +186,7 @@ The platform consists of five distinct sub-systems:
 2. **Acceptance**: Vendor clicks "Accept" to move status to `In-Progress`.
 3. **Print Execution**: Vendor prints document using exact specified instructions.
 4. **Completion Notification**: Shop sets status to `Ready for Pickup`. FCM sends notification to customer app.
-5. **QR Code Verification**: Customer arrives at shop, presents pickup QR code. Vendor scans/verifies and marks order `Completed`.
+5. **Order Collection**: Customer arrives at shop counter, provides order details or 4-digit pickup PIN. Vendor confirms and marks order `Completed`.
 
 ---
 
@@ -248,7 +247,7 @@ The PostgreSQL database structure consists of the following key tables:
 - **`shops`**: Stores shop names, addresses, phone, opening/closing hours, online/offline status, and total revenue metrics.
 - **`shop_pricing`**: Holds pricing matrix entries linking shop ID to paper size, color, duplexing, and binding prices.
 - **`shop_capabilities`**: Stores shop feature tags (e.g. Color Printing, Hardcover, Plotting).
-- **`orders`**: Core print order table storing customer ID, shop ID, file storage URLs, print configuration JSON, status enum, total price, and QR code string.
+- **`orders`**: Core print order table storing customer ID, shop ID, file storage URLs, print configuration JSON, status enum, and total price.
 - **`products`**: Marketplace product catalog items listed by shop owners.
 - **`product_orders`**: Marketplace product transactions between customers and shop owners.
 - **`payments`**: Razorpay transaction logs and status tracking (`created`, `captured`, `failed`).

@@ -18,11 +18,8 @@ const Orders = () => {
   const [storeOrders, setStoreOrders] = useState([]);
   const [isStoreLoading, setIsStoreLoading] = useState(true);
   
-  // Verification modal state
-  const [verifyingOrder, setVerifyingOrder] = useState(null);
-  const [enteredPickupCode, setEnteredPickupCode] = useState('');
-  const [verificationError, setVerificationError] = useState('');
-  const [isVerifying, setIsVerifying] = useState(false);
+  // Store order action state
+  const [markingCollectedId, setMarkingCollectedId] = useState(null);
 
   // Print modals state
   const [selectedPrintOrder, setSelectedPrintOrder] = useState(null);
@@ -129,28 +126,17 @@ const Orders = () => {
     }
   };
 
-  const handleVerifyCode = async (e) => {
-    e.preventDefault();
-    if (!verifyingOrder || !enteredPickupCode.trim()) return;
-
-    setIsVerifying(true);
-    setVerificationError('');
-
+  const handleMarkStoreCollected = async (orderId) => {
     try {
-      await api.patch(`/shop/inventory/orders/${verifyingOrder.order_id}/collect`, {
-        pickup_code: enteredPickupCode.trim()
-      });
-
+      setMarkingCollectedId(orderId);
+      await api.patch(`/shop/inventory/orders/${orderId}/collect`);
       setStoreOrders(prev => prev.map(o => 
-        o.order_id === verifyingOrder.order_id ? { ...o, status: 'collected', collected_at: new Date().toISOString() } : o
+        o.order_id === orderId ? { ...o, status: 'collected', collected_at: new Date().toISOString() } : o
       ));
-      setVerifyingOrder(null);
-      setEnteredPickupCode('');
-      alert('Order successfully verified and handed over!');
     } catch (err) {
-      setVerificationError(err.response?.data?.error || 'Invalid pickup code. Please check with customer.');
+      alert('Failed to mark order as collected: ' + (err.response?.data?.error || err.message));
     } finally {
-      setIsVerifying(false);
+      setMarkingCollectedId(null);
     }
   };
 
@@ -207,7 +193,7 @@ const Orders = () => {
               }`}
             >
               <span className="material-symbols-outlined text-[16px]">shopping_bag</span>
-              Store Pickups ({storeOrders.filter(o => o.status === 'placed').length} Pending)
+              Store Pickups ({storeOrders.filter(o => o.status === 'placed' || o.status === 'confirmed').length} Pending)
             </button>
             <button
               onClick={() => setActiveTab('print')}
@@ -257,7 +243,7 @@ const Orders = () => {
                   {filteredStoreOrders.map(order => {
                     const isCollected = order.status === 'collected';
                     const isCancelled = order.status === 'cancelled';
-                    const isPending = order.status === 'placed';
+                    const isPending = order.status === 'placed' || order.status === 'confirmed';
 
                     return (
                       <tr key={order.order_id} className="hover:bg-surface-bright/50 transition-colors">
@@ -289,7 +275,9 @@ const Orders = () => {
 
                         <td className="p-4 font-black text-base text-on-surface">
                           ₹{order.total_amount}
-                          <span className="block text-[10px] font-normal text-emerald-500 uppercase">Prepaid ({order.payment_method})</span>
+                          <span className={`block text-[10px] font-normal uppercase ${order.payment_method?.toUpperCase() === 'COD' ? 'text-amber-500 font-medium' : 'text-emerald-500'}`}>
+                            {order.payment_method?.toUpperCase() === 'COD' ? 'Payment Method: COD' : `Prepaid (${order.payment_method})`}
+                          </span>
                         </td>
 
                         <td className="p-4">
@@ -307,15 +295,12 @@ const Orders = () => {
                         <td className="p-4 text-right">
                           {isPending && (
                             <button
-                              onClick={() => {
-                                setVerifyingOrder(order);
-                                setEnteredPickupCode('');
-                                setVerificationError('');
-                              }}
-                              className="bg-primary hover:bg-primary/90 text-on-primary px-3.5 py-1.5 rounded-xl text-xs font-bold shadow-sm inline-flex items-center gap-1 cursor-pointer"
+                              onClick={() => handleMarkStoreCollected(order.order_id)}
+                              disabled={markingCollectedId === order.order_id}
+                              className="bg-primary hover:bg-primary/90 text-on-primary px-3.5 py-1.5 rounded-xl text-xs font-bold shadow-sm inline-flex items-center gap-1 cursor-pointer disabled:opacity-50"
                             >
-                              <span className="material-symbols-outlined text-[16px]">pin</span>
-                              Verify Code
+                              <span className="material-symbols-outlined text-[16px]">check_circle</span>
+                              {markingCollectedId === order.order_id ? 'Updating...' : 'Mark Collected'}
                             </button>
                           )}
                           {isCollected && (
@@ -448,70 +433,6 @@ const Orders = () => {
               </table>
             </div>
           )}
-        </div>
-      )}
-
-      {/* 4-Digit Pickup Verification Modal */}
-      {verifyingOrder && (
-        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-surface border border-outline-variant/40 rounded-3xl p-6 w-full max-w-sm shadow-2xl">
-            <div className="text-center mb-4">
-              <div className="w-12 h-12 rounded-2xl bg-primary/10 text-primary mx-auto flex items-center justify-center mb-2">
-                <span className="material-symbols-outlined text-2xl">pin</span>
-              </div>
-              <h3 className="font-bold text-lg text-on-surface">Verify In-Store Pickup</h3>
-              <p className="text-xs text-on-surface-variant">
-                Ask student for the 4-digit code shown in their PrintIt app.
-              </p>
-            </div>
-
-            <div className="bg-surface-container p-3 rounded-xl mb-4 text-xs">
-              <p className="text-on-surface-variant">Order: <strong className="text-on-surface">#{verifyingOrder.order_id.split('-')[0].toUpperCase()}</strong></p>
-              <p className="text-on-surface-variant">Student: <strong className="text-on-surface">{verifyingOrder.customer_name || 'Customer'}</strong></p>
-              <p className="text-on-surface-variant">Total: <strong className="text-primary font-bold">₹{verifyingOrder.total_amount}</strong></p>
-            </div>
-
-            {verificationError && (
-              <div className="bg-rose-500/15 border border-rose-500/40 text-rose-300 text-xs p-3 rounded-xl mb-4 text-center font-medium">
-                {verificationError}
-              </div>
-            )}
-
-            <form onSubmit={handleVerifyCode} className="space-y-4">
-              <div>
-                <label className="block text-center text-xs font-bold text-on-surface-variant mb-2">
-                  ENTER 4-DIGIT CODE
-                </label>
-                <input
-                  type="text"
-                  maxLength={4}
-                  required
-                  autoFocus
-                  placeholder="••••"
-                  value={enteredPickupCode}
-                  onChange={(e) => setEnteredPickupCode(e.target.value.replace(/\D/g, ''))}
-                  className="w-full text-center tracking-[0.5em] font-mono text-2xl font-black bg-surface-container py-3 rounded-xl border border-outline-variant/40 focus:border-primary outline-none text-primary"
-                />
-              </div>
-
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  onClick={() => setVerifyingOrder(null)}
-                  className="flex-1 py-2.5 rounded-xl bg-surface-container hover:bg-outline-variant/20 text-xs font-bold text-on-surface"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={isVerifying || enteredPickupCode.length !== 4}
-                  className="flex-1 py-2.5 rounded-xl bg-primary hover:bg-primary/90 text-on-primary text-xs font-bold shadow disabled:opacity-50"
-                >
-                  {isVerifying ? 'Verifying...' : 'Handover Order'}
-                </button>
-              </div>
-            </form>
-          </div>
         </div>
       )}
 

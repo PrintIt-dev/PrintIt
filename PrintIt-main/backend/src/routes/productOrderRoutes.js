@@ -5,6 +5,8 @@ const auth = require('../middleware/auth');
 const roleCheck = require('../middleware/roleCheck');
 const getRazorpay = require('../config/razorpay');
 
+const { calculateProductTotal } = require('../utils/pricingCalculator');
+
 // All routes here require authentication (Customer role)
 router.use(auth);
 router.use(roleCheck('customer'));
@@ -15,9 +17,10 @@ router.use(roleCheck('customer'));
  * @access  Private (Customer)
  */
 router.post('/', async (req, res) => {
-    const { product_id, quantity, amount_total, payment_id, razorpay_payment_id, razorpay_order_id, razorpay_signature } = req.body;
+    const { product_id, quantity, amount_total, payment_id, razorpay_payment_id, razorpay_order_id, razorpay_signature, payment_method } = req.body;
+    const isCOD = payment_method?.toUpperCase() === 'COD' || (!payment_id && !razorpay_payment_id);
 
-    const targetPaymentId = razorpay_payment_id || payment_id;
+    const targetPaymentId = razorpay_payment_id || payment_id || (isCOD ? `COD-${Date.now()}` : null);
     if (!targetPaymentId) {
         return res.status(400).json({ error: 'Payment ID is required' });
     }
@@ -28,14 +31,23 @@ router.post('/', async (req, res) => {
 
     // Verify Razorpay signature if provided (standard razorpay flow)
     if (razorpay_signature && razorpay_order_id && razorpay_payment_id) {
-        const crypto = require('crypto');
-        const body = razorpay_order_id + '|' + razorpay_payment_id;
-        const expectedSignature = crypto
-            .createHmac('sha256', process.env.RAZORPAY_KEY_SECRET)
-            .update(body)
-            .digest('hex');
+        let isValid = false;
+        if (process.env.NODE_ENV === 'test' && process.env.ALLOW_MOCK_PAYMENTS === 'true' && razorpay_signature === 'mock_signature') {
+            isValid = true;
+        } else {
+            const crypto = require('crypto');
+            const body = razorpay_order_id + '|' + razorpay_payment_id;
+            const expectedSignature = crypto
+                .createHmac('sha256', process.env.RAZORPAY_KEY_SECRET || '')
+                .update(body)
+                .digest('hex');
 
-        if (expectedSignature !== razorpay_signature && razorpay_signature !== 'mock_signature') {
+            const expectedBuf = Buffer.from(expectedSignature, 'utf8');
+            const signatureBuf = Buffer.from(razorpay_signature || '', 'utf8');
+            isValid = expectedBuf.length === signatureBuf.length && crypto.timingSafeEqual(expectedBuf, signatureBuf);
+        }
+
+        if (!isValid) {
             return res.status(400).json({ error: 'Invalid payment signature' });
         }
     }
@@ -45,12 +57,59 @@ router.post('/', async (req, res) => {
     try {
         await client.query('BEGIN');
 
+        // 1. Server-side Pricing Validation: Calculate expected price from product catalog
+        const { totalExpectedAmount } = await calculateProductTotal(client, product_id, quantity);
+
+        if (parseFloat(amount_total) < totalExpectedAmount) {
+            await client.query('ROLLBACK');
+            return res.status(400).json({
+                error: `Payment amount insufficient. Required ₹${totalExpectedAmount}, provided ₹${amount_total}`
+            });
+        }
+
+        // Prevent Double-Spending: Check if payment has already been associated with an order
+        const existingUsage = await client.query(
+            `SELECT 1 FROM orders WHERE payment_id = $1
+             UNION ALL
+             SELECT 1 FROM product_orders WHERE payment_id = $1`,
+            [targetPaymentId]
+        );
+
+        if (existingUsage.rows.length > 0) {
+            await client.query('ROLLBACK');
+            return res.status(409).json({ error: 'This payment has already been associated with an existing order.' });
+        }
+
         // Log payment if signature was valid (which we checked above)
-        if (razorpay_signature) {
+        if (isCOD) {
+            // Cash on Delivery — no online payment capture check needed
+        } else if (razorpay_signature) {
+            // Verify payment directly with Razorpay API if not in mock test mode
+            let actualPaid = totalExpectedAmount;
+            if (!(process.env.NODE_ENV === 'test' && process.env.ALLOW_MOCK_PAYMENTS === 'true' && razorpay_signature === 'mock_signature')) {
+                try {
+                    const paymentDetails = await getRazorpay().payments.fetch(razorpay_payment_id);
+                    if (!paymentDetails || paymentDetails.status !== 'captured') {
+                        await client.query('ROLLBACK');
+                        return res.status(400).json({ error: 'Payment is not captured or is invalid.' });
+                    }
+                    actualPaid = paymentDetails.amount / 100;
+                    if (actualPaid < totalExpectedAmount) {
+                        await client.query('ROLLBACK');
+                        return res.status(400).json({
+                            error: `Gateway payment amount ₹${actualPaid} is less than required ₹${totalExpectedAmount}`
+                        });
+                    }
+                } catch (pErr) {
+                    await client.query('ROLLBACK');
+                    return res.status(500).json({ error: 'Failed to verify payment with payment gateway' });
+                }
+            }
+
             await client.query(
                 `INSERT INTO payments (razorpay_order_id, razorpay_payment_id, status, amount)
                  VALUES ($1, $2, 'captured', $3)`,
-                [razorpay_order_id, razorpay_payment_id, amount_total]
+                [razorpay_order_id, razorpay_payment_id, actualPaid]
             );
         } else {
             // If no signature, rely on the payment already being there (e.g. wallet flow if we had one)
@@ -62,6 +121,14 @@ router.post('/', async (req, res) => {
             if (paymentCheck.rows.length === 0) {
                 await client.query('ROLLBACK');
                 return res.status(400).json({ error: 'Invalid or uncaptured payment. Order cannot be created.' });
+            }
+
+            const recordedPaid = parseFloat(paymentCheck.rows[0].amount);
+            if (recordedPaid < totalExpectedAmount) {
+                await client.query('ROLLBACK');
+                return res.status(400).json({
+                    error: `Payment amount ₹${recordedPaid} is less than required ₹${totalExpectedAmount}`
+                });
             }
         }
 
@@ -88,13 +155,13 @@ router.post('/', async (req, res) => {
         const shop_id = stockResult.rows[0].shop_id;
         const remainingStock = stockResult.rows[0].stock_count;
 
-        // 2. Insert Order
+        // 2. Insert Order (Enforcing server-side computed price totalExpectedAmount)
         const orderResult = await client.query(
             `INSERT INTO product_orders (
                 product_id, shop_id, customer_id, quantity, amount_total, payment_id, payment_status, status
-            ) VALUES ($1, $2, $3, $4, $5, $6, 'captured', 'confirmed')
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, 'confirmed')
             RETURNING *`,
-            [product_id, shop_id, req.user.user_id, quantity, amount_total, targetPaymentId]
+            [product_id, shop_id, req.user.user_id, quantity, totalExpectedAmount, targetPaymentId, isCOD ? 'pending' : 'captured']
         );
 
         await client.query('COMMIT');
@@ -112,7 +179,10 @@ router.post('/', async (req, res) => {
     } catch (err) {
         await client.query('ROLLBACK');
         console.error('Error placing product order:', err);
-        res.status(500).json({ error: err.message, stack: err.stack });
+        if (err.code === '23505') {
+            return res.status(409).json({ error: 'This payment has already been used for an existing order.' });
+        }
+        res.status(500).json({ error: 'Failed to place product order' });
     } finally {
         client.release();
     }
@@ -214,18 +284,32 @@ router.patch('/:id/cancel', async (req, res) => {
             return res.status(400).json({ error: 'Order cannot be cancelled at this stage' });
         }
 
-        // Refund via Wallet
+        // Refund via Wallet (Verifying payment amount against actual captured payment record)
         let paymentStatus = order.payment_status;
         if (order.payment_status === 'captured') {
             try {
-                const amount = parseFloat(order.amount_total);
+                let verifiedRefundAmount = parseFloat(order.amount_total);
+                if (order.payment_id) {
+                    const payCheck = await client.query(
+                        "SELECT amount FROM payments WHERE razorpay_payment_id = $1 AND status = 'captured'",
+                        [order.payment_id]
+                    );
+                    if (payCheck.rows.length > 0) {
+                        verifiedRefundAmount = Math.min(verifiedRefundAmount, parseFloat(payCheck.rows[0].amount));
+                    }
+                }
+
+                if (isNaN(verifiedRefundAmount) || verifiedRefundAmount <= 0) {
+                    throw new Error('Invalid refund amount calculation');
+                }
+
                 await client.query(
                     `UPDATE users SET wallet_balance = wallet_balance + $1 WHERE user_id = $2`,
-                    [amount, req.user.user_id]
+                    [verifiedRefundAmount, req.user.user_id]
                 );
                 await client.query(
                     `INSERT INTO wallet_transactions (user_id, amount, type, reference_id) VALUES ($1, $2, 'refund', $3)`,
-                    [req.user.user_id, amount, order.order_id]
+                    [req.user.user_id, verifiedRefundAmount, order.order_id]
                 );
                 paymentStatus = 'refunded';
             } catch (refundError) {

@@ -56,17 +56,17 @@ const LegalDocuments = () => {
           </div>
         </div>
 
-        {/* Card 4: Store Pickup & QR Verification */}
+        {/* Card 4: Store Pickup & PIN Handover */}
         <div className="p-6 rounded-2xl bg-surface-container border border-outline-variant/30 space-y-3">
           <div className="flex items-center gap-3 text-primary">
-            <span className="material-symbols-outlined text-2xl">qr_code_scanner</span>
+            <span className="material-symbols-outlined text-2xl">storefront</span>
             <h2 className="text-lg font-bold">In-Store Fulfillment &amp; 7-Day Policy</h2>
           </div>
           <p className="text-xs text-on-surface-variant leading-relaxed">
-            All customer purchases are completed via physical in-store collection at vendor locations. Order handover requires scanning or entering the customer&apos;s unique 4-digit verification code. Orders uncollected after 7 calendar days are eligible for vendor recycling.
+            All customer purchases are completed via physical in-store collection at vendor locations. Order handover is confirmed by verifying the customer&apos;s unique 4-digit pickup code or order ID. Orders uncollected after 7 calendar days are eligible for vendor recycling.
           </p>
           <div className="pt-2 text-xs font-mono text-primary">
-            Fulfillment: In-Person Pickup • 4-Digit PIN / QR Code • 7-Day Unclaimed Shredding
+            Fulfillment: In-Person Pickup • 4-Digit PIN Handover • 7-Day Unclaimed Shredding
           </div>
         </div>
       </div>

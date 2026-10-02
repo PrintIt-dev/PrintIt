@@ -73,7 +73,7 @@ print_it/
 │   │   ├── controllers/      # Business logic handlers
 │   │   ├── middleware/       # Auth guards, role verification, file uploaders
 │   │   ├── routes/           # REST API endpoint route definitions
-│   │   └── utils/            # FCM helper, file cleanup, QR generators
+│   │   └── utils/            # FCM helper, file cleanup, shop QR generators
 │   └── package.json
 ├── print_it_app/             # Flutter Mobile Application
 │   ├── lib/
@@ -163,7 +163,6 @@ print_it/
 | `queue_position`| `INT` | `DEFAULT 1` | Relative queue index |
 | `amount_total` | `NUMERIC(10, 2)`| `NOT NULL` | Final calculated order total |
 | `payment_status`| `VARCHAR(20)` | `DEFAULT 'pending'` | Enum: `pending`, `paid`, `refunded` |
-| `pickup_qr` | `TEXT` | `NULLABLE` | Verification QR code string |
 | `created_at` | `TIMESTAMP` | `DEFAULT CURRENT_TIMESTAMP`| Order placement timestamp |
 
 ---
@@ -184,7 +183,7 @@ print_it/
                                                                   │  READY   │
                                                                   └────┬─────┘
                                                                        │
-                                                                 (QR Verified)
+                                                                 (Counter Handover)
                                                                        │
                                                                        ▼
                                                                   ┌──────────┐

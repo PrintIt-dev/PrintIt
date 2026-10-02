@@ -136,7 +136,7 @@ const TermsOfService = () => {
             </p>
             <ul className="list-disc list-inside space-y-1.5 ml-2 mt-2">
               <li>
-                <strong>Order Handover Verification:</strong> Customers must present their digital Pickup QR code or provide the unique 4-digit pickup PIN to the shopkeeper at the counter to verify and collect their order.
+                <strong>Order Handover Verification:</strong> Customers must provide their order ID or unique 4-digit pickup PIN to the shopkeeper at the counter to verify and collect their order.
               </li>
               <li>
                 <strong>Order Lifecycle States:</strong> Orders progress through deterministic states: <code>queued</code> ➔ <code>processing</code> ➔ <code>ready</code> ➔ <code>collected</code> (or <code>cancelled</code>).
@@ -241,7 +241,7 @@ const TermsOfService = () => {
               <span>Partner Vendor Obligations</span>
             </h2>
             <p>
-              Print shop partners agree to maintain truthful pricing matrices, uphold posted operating hours, fulfill orders using commercial printing standards, and promptly honor pickup QR codes. Failure to maintain service level standards may result in shop delisting or payout suspension.
+              Print shop partners agree to maintain truthful pricing matrices, uphold posted operating hours, fulfill orders using commercial printing standards, and promptly fulfill and hand over completed orders upon counter verification. Failure to maintain service level standards may result in shop delisting or payout suspension.
             </p>
           </section>
 

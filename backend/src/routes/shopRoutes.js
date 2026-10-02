@@ -164,7 +164,7 @@ router.get('/orders/:id', async (req, res) => {
 
     try {
         const result = await pool.query(
-            'SELECT order_id, customer_id, shop_id, files, print_options, status, queue_position, amount_total, payment_status, created_at, updated_at, completed_at, files_deleted, cancelled_at, payment_id, pickup_qr, print_instructions, refund_status, refund_id, print_mode, files_deleted_at, deletion_status, secure_expires_at FROM orders WHERE order_id = $1',
+            'SELECT order_id, customer_id, shop_id, files, print_options, status, queue_position, amount_total, payment_status, created_at, updated_at, completed_at, files_deleted, cancelled_at, payment_id, print_instructions, refund_status, refund_id, print_mode, files_deleted_at, deletion_status, secure_expires_at FROM orders WHERE order_id = $1',
             [id]
         );
 

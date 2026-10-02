@@ -475,22 +475,23 @@ router.get('/orders', async (req, res) => {
         let query = `
             SELECT 
                 so.*,
-                u.name AS customer_name,
+                u.full_name AS customer_name,
                 u.phone AS customer_phone,
                 u.email AS customer_email,
                 COALESCE(
                     json_agg(
                         json_build_object(
-                            'order_item_id', soi.order_item_id,
+                            'order_item_id', soi.item_id,
+                            'item_id', soi.item_id,
                             'product_id', soi.product_id,
                             'title', p.title,
                             'category', p.category,
                             'quantity', soi.quantity,
                             'unit_price', soi.unit_price,
-                            'total_price', soi.total_price,
+                            'total_price', soi.subtotal,
                             'cover_photo_url', p.cover_photo_url
                         )
-                    ) FILTER (WHERE soi.order_item_id IS NOT NULL), '[]'
+                    ) FILTER (WHERE soi.item_id IS NOT NULL), '[]'
                 ) AS items
             FROM store_orders so
             LEFT JOIN users u ON so.customer_id = u.user_id
@@ -518,17 +519,12 @@ router.get('/orders', async (req, res) => {
 
 /**
  * @route   PATCH /api/shop/inventory/orders/:id/collect
- * @desc    Verify 4-digit pickup code and mark store order as collected
+ * @desc    Mark store order as collected (no code verification required)
  * @access  Private (Shopkeeper)
  */
 router.patch('/orders/:id/collect', async (req, res) => {
     try {
         const { id } = req.params;
-        const { pickup_code } = req.body;
-
-        if (!pickup_code) {
-            return res.status(400).json({ error: '4-digit pickup code is required' });
-        }
 
         const orderResult = await pool.query(
             'SELECT * FROM store_orders WHERE order_id = $1 AND shop_id = $2',
@@ -549,10 +545,6 @@ router.patch('/orders/:id/collect', async (req, res) => {
             return res.status(400).json({ error: 'Cannot collect a cancelled order' });
         }
 
-        if (String(order.pickup_code).trim() !== String(pickup_code).trim()) {
-            return res.status(400).json({ error: 'Invalid pickup code. Please ask customer to verify code in their app.' });
-        }
-
         const updateResult = await pool.query(
             `UPDATE store_orders 
              SET status = 'collected', collected_at = NOW(), updated_at = NOW() 
@@ -563,7 +555,7 @@ router.patch('/orders/:id/collect', async (req, res) => {
 
         res.json({
             success: true,
-            message: 'Order verified and marked as collected!',
+            message: 'Order marked as collected successfully!',
             order: updateResult.rows[0]
         });
     } catch (err) {

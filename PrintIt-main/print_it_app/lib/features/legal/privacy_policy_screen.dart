@@ -78,7 +78,7 @@ class PrivacyPolicyScreen extends StatelessWidget {
                           '• Dispatching print orders and specifications to your chosen partner print shop.\n'
                           '• Processing payments, managing your in-app wallet, and issuing instant cancellation refunds.\n'
                           '• Streaming real-time queue progress via Server-Sent Events (SSE) and FCM push alerts.\n'
-                          '• Generating secure 4-digit pickup PINs and encrypted QR codes for in-store physical collection.\n'
+                          '• Generating secure 4-digit pickup PINs and order reference identifiers for in-store physical collection.\n'
                           '• Customer support, misprint review, and dispute resolution.',
                         ),
                         _buildSection(

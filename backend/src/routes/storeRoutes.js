@@ -214,12 +214,10 @@ router.post('/orders', async (req, res) => {
         guest_phone
     } = req.body;
 
-    // 1. Strict COD Prohibition
-    if (!payment_method || payment_method.toLowerCase() === 'cod' || payment_method.toLowerCase() === 'cash_on_delivery') {
-        return res.status(400).json({
-            error: 'Cash on Delivery is not supported. All store pickup orders must be prepaid via Wallet or Razorpay.'
-        });
-    }
+    // 1. Normalize Payment Method: Store orders default/support COD
+    const normalizedPaymentMethod = (!payment_method || payment_method.toUpperCase() === 'COD' || payment_method.toLowerCase() === 'cash_on_delivery')
+        ? 'COD'
+        : payment_method;
 
     if (!shop_id) {
         return res.status(400).json({ error: 'Shop ID is required' });
@@ -306,8 +304,15 @@ router.post('/orders', async (req, res) => {
             });
         }
 
-        // 3. Process Prepaid Payment
-        if (payment_method === 'wallet') {
+        // 3. Process Payment
+        let paymentId = razorpay_payment_id || null;
+        let paymentStatus = 'completed';
+
+        if (normalizedPaymentMethod === 'COD') {
+            paymentId = `COD-${Date.now()}`;
+            paymentStatus = 'pending';
+        } else if (normalizedPaymentMethod === 'wallet') {
+            paymentId = `WAL-${Date.now()}`;
             if (!customer_id) {
                 await client.query('ROLLBACK');
                 return res.status(401).json({ error: 'Wallet payment requires an authenticated account.' });
@@ -336,7 +341,8 @@ router.post('/orders', async (req, res) => {
                 'UPDATE users SET wallet_balance = wallet_balance - $1 WHERE user_id = $2',
                 [computedTotal, customer_id]
             );
-        } else if (payment_method === 'razorpay') {
+        } else if (normalizedPaymentMethod === 'razorpay') {
+            paymentId = razorpay_payment_id || `PAY-${Date.now()}`;
             // Verify Razorpay signature if secret is available
             if (process.env.RAZORPAY_KEY_SECRET && razorpay_payment_id && razorpay_order_id && razorpay_signature) {
                 const generatedSignature = crypto
@@ -360,7 +366,7 @@ router.post('/orders', async (req, res) => {
             `INSERT INTO store_orders (
                 order_number, pickup_code, shop_id, customer_id, guest_email, guest_phone,
                 total_amount, payment_method, payment_id, payment_status, status
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'completed', 'confirmed')
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'confirmed')
             RETURNING *`,
             [
                 orderNumber,
@@ -370,8 +376,9 @@ router.post('/orders', async (req, res) => {
                 guest_email || null,
                 guest_phone || null,
                 computedTotal,
-                payment_method,
-                razorpay_payment_id || `WAL-${Date.now()}`
+                normalizedPaymentMethod,
+                paymentId,
+                paymentStatus
             ]
         );
 
@@ -395,20 +402,24 @@ router.post('/orders', async (req, res) => {
             );
         }
 
-        // 7. Credit Shop Wallet Pending Balance
-        await client.query(`
-            INSERT INTO shop_wallets (shop_id, pending_balance, total_earned, updated_at)
-            VALUES ($1, $2, $2, NOW())
-            ON CONFLICT (shop_id) DO UPDATE
-            SET pending_balance = shop_wallets.pending_balance + $2,
-                total_earned = shop_wallets.total_earned + $2,
-                updated_at = NOW()
-        `, [shop_id, computedTotal]);
+        // 7. Credit Shop Wallet Pending Balance (only for prepaid digital orders)
+        if (normalizedPaymentMethod !== 'COD') {
+            await client.query(`
+                INSERT INTO shop_wallets (shop_id, pending_balance, total_earned, updated_at)
+                VALUES ($1, $2, $2, NOW())
+                ON CONFLICT (shop_id) DO UPDATE
+                SET pending_balance = shop_wallets.pending_balance + $2,
+                    total_earned = shop_wallets.total_earned + $2,
+                    updated_at = NOW()
+            `, [shop_id, computedTotal]);
+        }
 
         await client.query('COMMIT');
 
         res.status(201).json({
+            success: true,
             message: 'Store order confirmed successfully!',
+            pickup_code: pickupCode,
             order: {
                 ...newOrder,
                 items: verifiedItems
@@ -515,23 +526,29 @@ router.patch('/orders/:id/cancel', auth, async (req, res) => {
             [id]
         );
 
-        // Refund to customer wallet
-        await client.query(
-            `UPDATE users SET wallet_balance = wallet_balance + $1 WHERE user_id = $2`,
-            [order.total_amount, req.user.user_id]
-        );
+        // Refund to customer wallet and deduct shop pending balance only if prepaid
+        if (order.payment_method?.toUpperCase() !== 'COD') {
+            await client.query(
+                `UPDATE users SET wallet_balance = wallet_balance + $1 WHERE user_id = $2`,
+                [order.total_amount, req.user.user_id]
+            );
 
-        // Deduct shop pending balance
-        await client.query(`
-            UPDATE shop_wallets 
-            SET pending_balance = GREATEST(0, pending_balance - $1),
-                total_earned = GREATEST(0, total_earned - $1),
-                updated_at = NOW()
-            WHERE shop_id = $2
-        `, [order.total_amount, order.shop_id]);
+            await client.query(`
+                UPDATE shop_wallets 
+                SET pending_balance = GREATEST(0, pending_balance - $1),
+                    total_earned = GREATEST(0, total_earned - $1),
+                    updated_at = NOW()
+                WHERE shop_id = $2
+            `, [order.total_amount, order.shop_id]);
+        }
 
         await client.query('COMMIT');
-        res.json({ message: 'Order cancelled successfully and funds refunded to your wallet.' });
+        res.json({
+            success: true,
+            message: order.payment_method?.toUpperCase() === 'COD'
+                ? 'Order cancelled successfully.'
+                : 'Order cancelled successfully and funds refunded to your wallet.'
+        });
     } catch (err) {
         await client.query('ROLLBACK');
         console.error('Error cancelling store order:', err);

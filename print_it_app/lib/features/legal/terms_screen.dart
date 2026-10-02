@@ -81,7 +81,7 @@ class TermsScreen extends StatelessWidget {
                           context,
                           '3. Physical Pickup & Verification',
                           '• All print orders are fulfilled strictly via in-store physical pickup at the selected partner shop to guarantee immediate handover and eliminate shipping delays.\n'
-                          '• Orders must be claimed at the shop counter by presenting your unique Pickup QR code or 4-digit pickup PIN.\n'
+                          '• Orders must be claimed at the shop counter by presenting your order ID or 4-digit pickup PIN.\n'
                           '• 7-Day Unclaimed Policy: Orders printed and not collected within 7 calendar days may be safely recycled or shredded by the shopkeeper to protect physical shelf space, without entitlement to refund.',
                         ),
                         _buildSection(

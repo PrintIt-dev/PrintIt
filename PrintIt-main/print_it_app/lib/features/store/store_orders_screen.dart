@@ -22,14 +22,17 @@ class _StoreOrdersScreenState extends ConsumerState<StoreOrdersScreen> {
   static const Color emerald = Color(0xFF10B981);
 
   Future<void> _handleCancelOrder(StoreOrder order) async {
+    final isCod = order.paymentMethod.toUpperCase() == 'COD';
     final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: const Text('Cancel Order?', style: TextStyle(fontWeight: FontWeight.bold)),
-        content: const Text(
-          'If you cancel, your reserved books will be returned to the shop stock and the full amount will be refunded to your PrintIt Wallet.',
-          style: TextStyle(fontSize: 13),
+        content: Text(
+          isCod
+              ? 'If you cancel, your reserved items will be released back to the shop stock. As this is a Cash on Delivery order, no payment was deducted.'
+              : 'If you cancel, your reserved books will be returned to the shop stock and the full amount will be refunded to your PrintIt Wallet.',
+          style: const TextStyle(fontSize: 13),
         ),
         actions: [
           TextButton(
@@ -53,7 +56,7 @@ class _StoreOrdersScreenState extends ConsumerState<StoreOrdersScreen> {
       ref.invalidate(customerStoreOrdersProvider);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Order cancelled. Amount refunded to wallet.')),
+          SnackBar(content: Text(isCod ? 'Store order cancelled.' : 'Order cancelled. Amount refunded to wallet.')),
         );
       }
     } catch (e) {
@@ -251,58 +254,7 @@ class _StoreOrdersScreenState extends ConsumerState<StoreOrdersScreen> {
                             ),
                           ),
 
-                          // 4-Digit Pickup Code Banner (if not yet collected/cancelled)
-                          if (isPlaced)
-                            Container(
-                              margin: const EdgeInsets.symmetric(horizontal: 16),
-                              padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
-                              decoration: BoxDecoration(
-                                color: theme.colorScheme.primary.withValues(alpha: 0.10),
-                                borderRadius: BorderRadius.circular(14),
-                              ),
-                              child: Row(
-                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                children: [
-                                  Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      const Text(
-                                        'COUNTER PICKUP CODE',
-                                        style: TextStyle(
-                                          fontSize: 10,
-                                          fontWeight: FontWeight.bold,
-                                          letterSpacing: 0.8,
-                                          color: Colors.grey,
-                                        ),
-                                      ),
-                                      const SizedBox(height: 2),
-                                      const Text(
-                                        'Show this at shop counter',
-                                        style: TextStyle(fontSize: 11, color: Colors.grey),
-                                      ),
-                                    ],
-                                  ),
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-                                    decoration: BoxDecoration(
-                                      color: theme.colorScheme.primary,
-                                      borderRadius: BorderRadius.circular(10),
-                                    ),
-                                    child: Text(
-                                      order.pickupCode,
-                                      style: const TextStyle(
-                                        color: Colors.white,
-                                        fontSize: 22,
-                                        fontWeight: FontWeight.w900,
-                                        letterSpacing: 4,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-
-                          // Items List
+                                                    // Items List
                           Padding(
                             padding: const EdgeInsets.all(16),
                             child: Column(
@@ -351,7 +303,7 @@ class _StoreOrdersScreenState extends ConsumerState<StoreOrdersScreen> {
                                       crossAxisAlignment: CrossAxisAlignment.start,
                                       children: [
                                         Text(
-                                          'Paid via ${order.paymentMethod.toUpperCase()}',
+                                          order.paymentMethod.toUpperCase() == 'COD' ? 'Payment Method: COD' : 'Paid via ${order.paymentMethod.toUpperCase()}',
                                           style: const TextStyle(fontSize: 10, color: Colors.grey),
                                         ),
                                         Text(
@@ -367,7 +319,7 @@ class _StoreOrdersScreenState extends ConsumerState<StoreOrdersScreen> {
                                     if (isPlaced)
                                       TextButton(
                                         onPressed: () => _handleCancelOrder(order),
-                                        child: const Text('Cancel & Refund', style: TextStyle(color: Colors.redAccent, fontSize: 12)),
+                                        child: Text(order.paymentMethod.toUpperCase() == 'COD' ? 'Cancel Order' : 'Cancel & Refund', style: const TextStyle(color: Colors.redAccent, fontSize: 12)),
                                       ),
                                   ],
                                 ),
