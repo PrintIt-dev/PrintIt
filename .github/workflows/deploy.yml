@@ -38,6 +38,15 @@ jobs:
           vercel link --yes --project printitshops --scope printit2 --token $VERCEL_TOKEN
           vercel deploy --prod --yes --token $VERCEL_TOKEN
 
+      - name: Deploy Admin Portal (print-it)
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: |
+          # Remove admin_portal from vercelignore if present
+          sed -i '/^admin_portal$/d' .vercelignore || true
+          vercel link --yes --project print-it --scope printit2 --token $VERCEL_TOKEN
+          vercel deploy --prod --yes --token $VERCEL_TOKEN
+
       - name: Trigger Render Backend Deploy (Optional)
         if: ${{ secrets.RENDER_DEPLOY_HOOK != '' }}
         env:
