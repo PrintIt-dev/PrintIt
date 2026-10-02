@@ -9,7 +9,6 @@ PrintIt-main
 print_it_app
 screenshots
 shopkeeper
-shop_portal
 ss
 stitch*
 test-results
@@ -18,3 +17,4 @@ tests
 *.tar.gz
 *.mp4
 *.webm
+shop_portal

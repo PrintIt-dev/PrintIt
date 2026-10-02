@@ -13,5 +13,6 @@ router.put('/:id/approve', adminPayoutController.approveWithdrawal);
 router.put('/:id/reject', adminPayoutController.rejectWithdrawal);
 router.get('/history', adminPayoutController.getPayoutHistory);
 router.get('/wallets', adminPayoutController.getAllShopWallets);
+router.get('/daily-sales', adminPayoutController.getDailySales);
 
 module.exports = router;

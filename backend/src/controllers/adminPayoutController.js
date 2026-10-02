@@ -280,6 +280,88 @@ exports.getPayoutHistory = async (req, res) => {
   }
 };
 
+// GET /api/admin/payouts/daily-sales
+exports.getDailySales = async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT
+          s.shop_id,
+          s.name AS shop_name,
+          s.shop_code,
+          s.is_open,
+          s.address,
+          s.price_bw,
+          s.price_color,
+          u.phone AS owner_phone,
+          u.full_name AS owner_name,
+
+          -- Today's stats
+          COALESCE(SUM(CASE WHEN o.created_at >= CURRENT_DATE AND o.status != 'cancelled' THEN 1 ELSE 0 END), 0) AS today_orders,
+          COALESCE(SUM(CASE WHEN o.created_at >= CURRENT_DATE AND o.status = 'collected' THEN 1 ELSE 0 END), 0) AS today_completed,
+          COALESCE(SUM(CASE WHEN o.created_at >= CURRENT_DATE AND o.status = 'queued' THEN 1 ELSE 0 END), 0) AS today_queued,
+          COALESCE(SUM(CASE WHEN o.created_at >= CURRENT_DATE AND o.status = 'cancelled' THEN 1 ELSE 0 END), 0) AS today_cancelled,
+          COALESCE(SUM(CASE WHEN o.created_at >= CURRENT_DATE AND o.status != 'cancelled' THEN o.amount_total ELSE 0 END), 0) AS today_revenue,
+
+          -- All-time stats
+          COALESCE(SUM(CASE WHEN o.status != 'cancelled' THEN 1 ELSE 0 END), 0) AS total_orders,
+          COALESCE(SUM(CASE WHEN o.status = 'collected' THEN 1 ELSE 0 END), 0) AS total_completed,
+          COALESCE(SUM(CASE WHEN o.status != 'cancelled' THEN o.amount_total ELSE 0 END), 0) AS total_revenue
+
+       FROM shops s
+       JOIN users u ON s.owner_id = u.user_id
+       LEFT JOIN orders o ON o.shop_id = s.shop_id
+       WHERE s.is_active = true
+       GROUP BY s.shop_id, s.name, s.shop_code, s.is_open, s.address, s.price_bw, s.price_color, u.phone, u.full_name
+       ORDER BY today_orders DESC, total_orders DESC, s.name ASC`
+    );
+
+    const shops = result.rows.map(row => ({
+      shop_id: row.shop_id,
+      name: row.shop_name,
+      shop_code: row.shop_code,
+      is_open: row.is_open,
+      address: row.address,
+      price_bw: parseFloat(row.price_bw || 0),
+      price_color: parseFloat(row.price_color || 0),
+      owner_name: row.owner_name || 'Partner',
+      owner_phone: row.owner_phone || 'N/A',
+      today: {
+        orders: parseInt(row.today_orders, 10),
+        completed: parseInt(row.today_completed, 10),
+        queued: parseInt(row.today_queued, 10),
+        cancelled: parseInt(row.today_cancelled, 10),
+        revenue: parseFloat(row.today_revenue),
+      },
+      allTime: {
+        orders: parseInt(row.total_orders, 10),
+        completed: parseInt(row.total_completed, 10),
+        revenue: parseFloat(row.total_revenue),
+      },
+    }));
+
+    // Platform-wide totals
+    const platformToday = {
+      orders: shops.reduce((s, sh) => s + sh.today.orders, 0),
+      completed: shops.reduce((s, sh) => s + sh.today.completed, 0),
+      revenue: shops.reduce((s, sh) => s + sh.today.revenue, 0),
+    };
+    const platformAllTime = {
+      orders: shops.reduce((s, sh) => s + sh.allTime.orders, 0),
+      completed: shops.reduce((s, sh) => s + sh.allTime.completed, 0),
+      revenue: shops.reduce((s, sh) => s + sh.allTime.revenue, 0),
+    };
+
+    res.json({
+      shops,
+      platform: { today: platformToday, allTime: platformAllTime },
+      generatedAt: new Date().toISOString(),
+    });
+  } catch (err) {
+    console.error('Error fetching daily sales:', err);
+    res.status(500).json({ error: 'Failed to fetch daily sales data' });
+  }
+};
+
 // GET /api/admin/payouts/wallets
 exports.getAllShopWallets = async (req, res) => {
   try {
