@@ -65,3 +65,5 @@ PrintIt Agent/
 /PrintIt Agent/
 PrintIt Agent
 
+.vercel
+.env*
