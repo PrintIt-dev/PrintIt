@@ -476,400 +476,6 @@ class _DocumentConfigScreenState extends ConsumerState<DocumentConfigScreen> {
                               const SizedBox(height: 16),
                             ],
 
-                            // Number of Copies Card
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
-                              decoration: BoxDecoration(
-                                color: isDark
-                                    ? const Color(0xFF121929).withValues(alpha: 0.90)
-                                    : Colors.white.withValues(alpha: 0.88),
-                                borderRadius: BorderRadius.circular(20),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: isDark
-                                        ? Colors.black.withValues(alpha: 0.35)
-                                        : const Color(0x140F172A),
-                                    blurRadius: 20,
-                                    offset: const Offset(0, 6),
-                                  ),
-                                ],
-                              ),
-                              child: Row(
-                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                children: [
-                                  Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        'Number of copies',
-                                        style: TextStyle(
-                                          color: isDark ? const Color(0xFFF1F5F9) : const Color(0xFF0F172A),
-                                          fontSize: 15,
-                                          fontWeight: FontWeight.w500,
-                                        ),
-                                      ),
-                                      const SizedBox(height: 2),
-                                      if (orderState.files.isNotEmpty)
-                                        Text(
-                                          'File ${orderState.activeFileIndex + 1} (${orderState.files[orderState.activeFileIndex].pages} pages)',
-                                          style: TextStyle(
-                                            color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
-                                            fontSize: 13,
-                                            fontWeight: FontWeight.w400,
-                                          ),
-                                        ),
-                                    ],
-                                  ),
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                    decoration: BoxDecoration(
-                                      color: isDark ? const Color(0xFF1E293B) : Colors.white.withValues(alpha: 0.85),
-                                      borderRadius: BorderRadius.circular(12),
-                                      border: Border.all(
-                                        color: isDark ? Colors.white12 : Colors.white,
-                                      ),
-                                      boxShadow: [
-                                        BoxShadow(
-                                          color: Colors.black.withValues(alpha: 0.04),
-                                          blurRadius: 4,
-                                        ),
-                                      ],
-                                    ),
-                                    child: Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        IconButton(
-                                          icon: Icon(Icons.remove, size: 18, color: isDark ? const Color(0xFF38BDF8) : const Color(0xFF0284C7)),
-                                          onPressed: () {
-                                            HapticFeedback.selectionClick();
-                                            ref.read(orderProvider.notifier).updateCopies(-1);
-                                          },
-                                          splashRadius: 18,
-                                          constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-                                          padding: EdgeInsets.zero,
-                                        ),
-                                        Padding(
-                                          padding: const EdgeInsets.symmetric(horizontal: 8),
-                                          child: Text(
-                                            '${orderState.copies}',
-                                            style: TextStyle(
-                                              color: isDark ? Colors.white : const Color(0xFF0F172A),
-                                              fontSize: 16,
-                                              fontWeight: FontWeight.w600,
-                                            ),
-                                          ),
-                                        ),
-                                        IconButton(
-                                          icon: Icon(Icons.add, size: 18, color: isDark ? const Color(0xFF38BDF8) : const Color(0xFF0284C7)),
-                                          onPressed: () {
-                                            HapticFeedback.selectionClick();
-                                            ref.read(orderProvider.notifier).updateCopies(1);
-                                          },
-                                          splashRadius: 18,
-                                          constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-                                          padding: EdgeInsets.zero,
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            const SizedBox(height: 20),
-
-                            // Choose Print Color Section
-                            Padding(
-                              padding: const EdgeInsets.only(left: 2, bottom: 8),
-                              child: Text(
-                                'Choose print color',
-                                style: TextStyle(
-                                  color: isDark ? const Color(0xFFF1F5F9) : const Color(0xFF0F172A),
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              ),
-                            ),
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: _buildSelectableCard(
-                                    isDark: isDark,
-                                    isSelected: orderState.colorMode == 'Color',
-                                    onTap: () => ref.read(orderProvider.notifier).setColorMode('Color'),
-                                    icon: SizedBox(
-                                      width: 24,
-                                      height: 24,
-                                      child: Stack(
-                                        children: [
-                                          Positioned(
-                                            top: 2, left: 2,
-                                            child: Container(width: 11, height: 11, decoration: const BoxDecoration(color: Color(0xFFEF4444), shape: BoxShape.circle)),
-                                          ),
-                                          Positioned(
-                                            bottom: 2, left: 3,
-                                            child: Container(width: 11, height: 11, decoration: const BoxDecoration(color: Color(0xFF3B82F6), shape: BoxShape.circle)),
-                                          ),
-                                          Positioned(
-                                            right: 2, top: 5,
-                                            child: Container(width: 11, height: 11, decoration: const BoxDecoration(color: Color(0xFF10B981), shape: BoxShape.circle)),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                    title: 'Coloured',
-                                  ),
-                                ),
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  child: _buildSelectableCard(
-                                    isDark: isDark,
-                                    isSelected: orderState.colorMode == 'B&W',
-                                    onTap: () => ref.read(orderProvider.notifier).setColorMode('B&W'),
-                                    icon: Icon(
-                                      Icons.tonality,
-                                      size: 24,
-                                      color: orderState.colorMode == 'B&W'
-                                          ? const Color(0xFF0891B2)
-                                          : (isDark ? const Color(0xFFCBD5E1) : const Color(0xFF0F172A)),
-                                    ),
-                                    title: 'B & W',
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 20),
-
-                            // Paper Size Section
-                            Padding(
-                              padding: const EdgeInsets.only(left: 2, bottom: 8),
-                              child: Text(
-                                'Paper size',
-                                style: TextStyle(
-                                  color: isDark ? const Color(0xFFF1F5F9) : const Color(0xFF0F172A),
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              ),
-                            ),
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: _buildSelectableCard(
-                                    isDark: isDark,
-                                    isSelected: orderState.paperSize == 'A4',
-                                    onTap: () => ref.read(orderProvider.notifier).setPaperSize('A4'),
-                                    icon: Icon(
-                                      Icons.article_outlined,
-                                      size: 24,
-                                      color: orderState.paperSize == 'A4'
-                                          ? const Color(0xFF0891B2)
-                                          : (isDark ? const Color(0xFFCBD5E1) : const Color(0xFF0F172A)),
-                                    ),
-                                    title: 'A4',
-                                    subtitle: 'Standard',
-                                  ),
-                                ),
-                                const SizedBox(width: 10),
-                                Expanded(
-                                  child: _buildSelectableCard(
-                                    isDark: isDark,
-                                    isSelected: orderState.paperSize == 'A3',
-                                    onTap: () => ref.read(orderProvider.notifier).setPaperSize('A3'),
-                                    icon: Icon(
-                                      Icons.aspect_ratio_outlined,
-                                      size: 24,
-                                      color: orderState.paperSize == 'A3'
-                                          ? const Color(0xFF0891B2)
-                                          : (isDark ? const Color(0xFFCBD5E1) : const Color(0xFF0F172A)),
-                                    ),
-                                    title: 'A3',
-                                    subtitle: 'Large',
-                                  ),
-                                ),
-                                const SizedBox(width: 10),
-                                Expanded(
-                                  child: _buildSelectableCard(
-                                    isDark: isDark,
-                                    isSelected: orderState.paperSize == 'B5',
-                                    onTap: () => ref.read(orderProvider.notifier).setPaperSize('B5'),
-                                    icon: Icon(
-                                      Icons.menu_book_outlined,
-                                      size: 24,
-                                      color: orderState.paperSize == 'B5'
-                                          ? const Color(0xFF0891B2)
-                                          : (isDark ? const Color(0xFFCBD5E1) : const Color(0xFF0F172A)),
-                                    ),
-                                    title: 'B5',
-                                    subtitle: 'Book',
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 20),
-
-                            // Choose Print Orientation Section
-                            Padding(
-                              padding: const EdgeInsets.only(left: 2, bottom: 8),
-                              child: Text(
-                                'Choose print orientation',
-                                style: TextStyle(
-                                  color: isDark ? const Color(0xFFF1F5F9) : const Color(0xFF0F172A),
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              ),
-                            ),
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: _buildSelectableCard(
-                                    isDark: isDark,
-                                    isSelected: orderState.orientation == 'portrait',
-                                    onTap: () => ref.read(orderProvider.notifier).setOrientation('portrait'),
-                                    icon: Icon(
-                                      Icons.description_outlined,
-                                      size: 24,
-                                      color: orderState.orientation == 'portrait'
-                                          ? const Color(0xFF0891B2)
-                                          : (isDark ? const Color(0xFFCBD5E1) : const Color(0xFF334155)),
-                                    ),
-                                    title: 'Portrait',
-                                    subtitle: '8.3 × 11.7 in',
-                                  ),
-                                ),
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  child: _buildSelectableCard(
-                                    isDark: isDark,
-                                    isSelected: orderState.orientation == 'landscape',
-                                    onTap: () => ref.read(orderProvider.notifier).setOrientation('landscape'),
-                                    icon: RotatedBox(
-                                      quarterTurns: 1,
-                                      child: Icon(
-                                        Icons.description_outlined,
-                                        size: 24,
-                                        color: orderState.orientation == 'landscape'
-                                            ? const Color(0xFF0891B2)
-                                            : (isDark ? const Color(0xFFCBD5E1) : const Color(0xFF334155)),
-                                      ),
-                                    ),
-                                    title: 'Landscape',
-                                    subtitle: '11.7 × 8.3 in',
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 20),
-
-                            // Sidedness Section
-                            Padding(
-                              padding: const EdgeInsets.only(left: 2, bottom: 8),
-                              child: Text(
-                                'Sidedness',
-                                style: TextStyle(
-                                  color: isDark ? const Color(0xFFF1F5F9) : const Color(0xFF0F172A),
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              ),
-                            ),
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: _buildSelectableCard(
-                                    isDark: isDark,
-                                    isSelected: orderState.sides == 'single',
-                                    onTap: () => ref.read(orderProvider.notifier).setSides('single'),
-                                    icon: Container(
-                                      width: 18,
-                                      height: 22,
-                                      decoration: BoxDecoration(
-                                        border: Border.all(
-                                          color: orderState.sides == 'single'
-                                              ? const Color(0xFF0891B2)
-                                              : (isDark ? const Color(0xFFCBD5E1) : const Color(0xFF475569)),
-                                          width: 1.5,
-                                        ),
-                                        borderRadius: BorderRadius.circular(3),
-                                      ),
-                                      alignment: Alignment.center,
-                                      child: Text(
-                                        '1',
-                                        style: TextStyle(
-                                          color: orderState.sides == 'single'
-                                              ? const Color(0xFF0891B2)
-                                              : (isDark ? const Color(0xFFCBD5E1) : const Color(0xFF475569)),
-                                          fontSize: 11,
-                                          fontWeight: FontWeight.bold,
-                                        ),
-                                      ),
-                                    ),
-                                    title: 'Single Sided',
-                                    subtitle: '1 side / sheet',
-                                  ),
-                                ),
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  child: _buildSelectableCard(
-                                    isDark: isDark,
-                                    isSelected: orderState.sides == 'double',
-                                    onTap: () => ref.read(orderProvider.notifier).setSides('double'),
-                                    icon: SizedBox(
-                                      width: 22,
-                                      height: 24,
-                                      child: Stack(
-                                        children: [
-                                          Positioned(
-                                            top: 0, right: 0,
-                                            child: Container(
-                                              width: 16, height: 20,
-                                              decoration: BoxDecoration(
-                                                border: Border.all(
-                                                  color: isDark ? const Color(0xFF64748B) : const Color(0xFF94A3B8),
-                                                  width: 1.2,
-                                                ),
-                                                borderRadius: BorderRadius.circular(3),
-                                              ),
-                                            ),
-                                          ),
-                                          Positioned(
-                                            bottom: 0, left: 0,
-                                            child: Container(
-                                              width: 16, height: 20,
-                                              decoration: BoxDecoration(
-                                                color: isDark ? const Color(0xFF1E293B) : Colors.white,
-                                                border: Border.all(
-                                                  color: orderState.sides == 'double'
-                                                      ? const Color(0xFF0891B2)
-                                                      : (isDark ? const Color(0xFFCBD5E1) : const Color(0xFF475569)),
-                                                  width: 1.5,
-                                                ),
-                                                borderRadius: BorderRadius.circular(3),
-                                              ),
-                                              alignment: Alignment.center,
-                                              child: Text(
-                                                '2',
-                                                style: TextStyle(
-                                                  color: orderState.sides == 'double'
-                                                      ? const Color(0xFF0891B2)
-                                                      : (isDark ? const Color(0xFFCBD5E1) : const Color(0xFF475569)),
-                                                  fontSize: 10,
-                                                  fontWeight: FontWeight.bold,
-                                                ),
-                                              ),
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                    title: 'Back-to-Back',
-                                    subtitle: '2 sides / sheet',
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 20),
-
                             // Pages per Sheet Section (1, 2, 4, 6, 9, 16)
                             Padding(
                               padding: const EdgeInsets.only(left: 2, bottom: 8),
@@ -1011,6 +617,400 @@ class _DocumentConfigScreenState extends ConsumerState<DocumentConfigScreen> {
                                 ),
                               ),
                             ],
+                            const SizedBox(height: 20),
+
+                            // Sidedness Section
+                            Padding(
+                              padding: const EdgeInsets.only(left: 2, bottom: 8),
+                              child: Text(
+                                'Sidedness',
+                                style: TextStyle(
+                                  color: isDark ? const Color(0xFFF1F5F9) : const Color(0xFF0F172A),
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: _buildSelectableCard(
+                                    isDark: isDark,
+                                    isSelected: orderState.sides == 'single',
+                                    onTap: () => ref.read(orderProvider.notifier).setSides('single'),
+                                    icon: Container(
+                                      width: 18,
+                                      height: 22,
+                                      decoration: BoxDecoration(
+                                        border: Border.all(
+                                          color: orderState.sides == 'single'
+                                              ? const Color(0xFF0891B2)
+                                              : (isDark ? const Color(0xFFCBD5E1) : const Color(0xFF475569)),
+                                          width: 1.5,
+                                        ),
+                                        borderRadius: BorderRadius.circular(3),
+                                      ),
+                                      alignment: Alignment.center,
+                                      child: Text(
+                                        '1',
+                                        style: TextStyle(
+                                          color: orderState.sides == 'single'
+                                              ? const Color(0xFF0891B2)
+                                              : (isDark ? const Color(0xFFCBD5E1) : const Color(0xFF475569)),
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                    ),
+                                    title: 'Single Sided',
+                                    subtitle: '1 side / sheet',
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: _buildSelectableCard(
+                                    isDark: isDark,
+                                    isSelected: orderState.sides == 'double',
+                                    onTap: () => ref.read(orderProvider.notifier).setSides('double'),
+                                    icon: SizedBox(
+                                      width: 22,
+                                      height: 24,
+                                      child: Stack(
+                                        children: [
+                                          Positioned(
+                                            top: 0, right: 0,
+                                            child: Container(
+                                              width: 16, height: 20,
+                                              decoration: BoxDecoration(
+                                                border: Border.all(
+                                                  color: isDark ? const Color(0xFF64748B) : const Color(0xFF94A3B8),
+                                                  width: 1.2,
+                                                ),
+                                                borderRadius: BorderRadius.circular(3),
+                                              ),
+                                            ),
+                                          ),
+                                          Positioned(
+                                            bottom: 0, left: 0,
+                                            child: Container(
+                                              width: 16, height: 20,
+                                              decoration: BoxDecoration(
+                                                color: isDark ? const Color(0xFF1E293B) : Colors.white,
+                                                border: Border.all(
+                                                  color: orderState.sides == 'double'
+                                                      ? const Color(0xFF0891B2)
+                                                      : (isDark ? const Color(0xFFCBD5E1) : const Color(0xFF475569)),
+                                                  width: 1.5,
+                                                ),
+                                                borderRadius: BorderRadius.circular(3),
+                                              ),
+                                              alignment: Alignment.center,
+                                              child: Text(
+                                                '2',
+                                                style: TextStyle(
+                                                  color: orderState.sides == 'double'
+                                                      ? const Color(0xFF0891B2)
+                                                      : (isDark ? const Color(0xFFCBD5E1) : const Color(0xFF475569)),
+                                                  fontSize: 10,
+                                                  fontWeight: FontWeight.bold,
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    title: 'Back-to-Back',
+                                    subtitle: '2 sides / sheet',
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 20),
+
+                            // Choose Print Color Section
+                            Padding(
+                              padding: const EdgeInsets.only(left: 2, bottom: 8),
+                              child: Text(
+                                'Choose print color',
+                                style: TextStyle(
+                                  color: isDark ? const Color(0xFFF1F5F9) : const Color(0xFF0F172A),
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: _buildSelectableCard(
+                                    isDark: isDark,
+                                    isSelected: orderState.colorMode == 'Color',
+                                    onTap: () => ref.read(orderProvider.notifier).setColorMode('Color'),
+                                    icon: SizedBox(
+                                      width: 24,
+                                      height: 24,
+                                      child: Stack(
+                                        children: [
+                                          Positioned(
+                                            top: 2, left: 2,
+                                            child: Container(width: 11, height: 11, decoration: const BoxDecoration(color: Color(0xFFEF4444), shape: BoxShape.circle)),
+                                          ),
+                                          Positioned(
+                                            bottom: 2, left: 3,
+                                            child: Container(width: 11, height: 11, decoration: const BoxDecoration(color: Color(0xFF3B82F6), shape: BoxShape.circle)),
+                                          ),
+                                          Positioned(
+                                            right: 2, top: 5,
+                                            child: Container(width: 11, height: 11, decoration: const BoxDecoration(color: Color(0xFF10B981), shape: BoxShape.circle)),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    title: 'Coloured',
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: _buildSelectableCard(
+                                    isDark: isDark,
+                                    isSelected: orderState.colorMode == 'B&W',
+                                    onTap: () => ref.read(orderProvider.notifier).setColorMode('B&W'),
+                                    icon: Icon(
+                                      Icons.tonality,
+                                      size: 24,
+                                      color: orderState.colorMode == 'B&W'
+                                          ? const Color(0xFF0891B2)
+                                          : (isDark ? const Color(0xFFCBD5E1) : const Color(0xFF0F172A)),
+                                    ),
+                                    title: 'B & W',
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 20),
+
+                            // Number of Copies Card
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+                              decoration: BoxDecoration(
+                                color: isDark
+                                    ? const Color(0xFF121929).withValues(alpha: 0.90)
+                                    : Colors.white.withValues(alpha: 0.88),
+                                borderRadius: BorderRadius.circular(20),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: isDark
+                                        ? Colors.black.withValues(alpha: 0.35)
+                                        : const Color(0x140F172A),
+                                    blurRadius: 20,
+                                    offset: const Offset(0, 6),
+                                  ),
+                                ],
+                              ),
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        'Number of copies',
+                                        style: TextStyle(
+                                          color: isDark ? const Color(0xFFF1F5F9) : const Color(0xFF0F172A),
+                                          fontSize: 15,
+                                          fontWeight: FontWeight.w500,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 2),
+                                      if (orderState.files.isNotEmpty)
+                                        Text(
+                                          'File ${orderState.activeFileIndex + 1} (${orderState.files[orderState.activeFileIndex].pages} pages)',
+                                          style: TextStyle(
+                                            color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+                                            fontSize: 13,
+                                            fontWeight: FontWeight.w400,
+                                          ),
+                                        ),
+                                    ],
+                                  ),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: isDark ? const Color(0xFF1E293B) : Colors.white.withValues(alpha: 0.85),
+                                      borderRadius: BorderRadius.circular(12),
+                                      border: Border.all(
+                                        color: isDark ? Colors.white12 : Colors.white,
+                                      ),
+                                      boxShadow: [
+                                        BoxShadow(
+                                          color: Colors.black.withValues(alpha: 0.04),
+                                          blurRadius: 4,
+                                        ),
+                                      ],
+                                    ),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        IconButton(
+                                          icon: Icon(Icons.remove, size: 18, color: isDark ? const Color(0xFF38BDF8) : const Color(0xFF0284C7)),
+                                          onPressed: () {
+                                            HapticFeedback.selectionClick();
+                                            ref.read(orderProvider.notifier).updateCopies(-1);
+                                          },
+                                          splashRadius: 18,
+                                          constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                                          padding: EdgeInsets.zero,
+                                        ),
+                                        Padding(
+                                          padding: const EdgeInsets.symmetric(horizontal: 8),
+                                          child: Text(
+                                            '${orderState.copies}',
+                                            style: TextStyle(
+                                              color: isDark ? Colors.white : const Color(0xFF0F172A),
+                                              fontSize: 16,
+                                              fontWeight: FontWeight.w600,
+                                            ),
+                                          ),
+                                        ),
+                                        IconButton(
+                                          icon: Icon(Icons.add, size: 18, color: isDark ? const Color(0xFF38BDF8) : const Color(0xFF0284C7)),
+                                          onPressed: () {
+                                            HapticFeedback.selectionClick();
+                                            ref.read(orderProvider.notifier).updateCopies(1);
+                                          },
+                                          splashRadius: 18,
+                                          constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                                          padding: EdgeInsets.zero,
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(height: 20),
+
+                            // Choose Print Orientation Section
+                            Padding(
+                              padding: const EdgeInsets.only(left: 2, bottom: 8),
+                              child: Text(
+                                'Choose print orientation',
+                                style: TextStyle(
+                                  color: isDark ? const Color(0xFFF1F5F9) : const Color(0xFF0F172A),
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: _buildSelectableCard(
+                                    isDark: isDark,
+                                    isSelected: orderState.orientation == 'portrait',
+                                    onTap: () => ref.read(orderProvider.notifier).setOrientation('portrait'),
+                                    icon: Icon(
+                                      Icons.description_outlined,
+                                      size: 24,
+                                      color: orderState.orientation == 'portrait'
+                                          ? const Color(0xFF0891B2)
+                                          : (isDark ? const Color(0xFFCBD5E1) : const Color(0xFF334155)),
+                                    ),
+                                    title: 'Portrait',
+                                    subtitle: '8.3 × 11.7 in',
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: _buildSelectableCard(
+                                    isDark: isDark,
+                                    isSelected: orderState.orientation == 'landscape',
+                                    onTap: () => ref.read(orderProvider.notifier).setOrientation('landscape'),
+                                    icon: RotatedBox(
+                                      quarterTurns: 1,
+                                      child: Icon(
+                                        Icons.description_outlined,
+                                        size: 24,
+                                        color: orderState.orientation == 'landscape'
+                                            ? const Color(0xFF0891B2)
+                                            : (isDark ? const Color(0xFFCBD5E1) : const Color(0xFF334155)),
+                                      ),
+                                    ),
+                                    title: 'Landscape',
+                                    subtitle: '11.7 × 8.3 in',
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 20),
+
+                            // Paper Size Section
+                            Padding(
+                              padding: const EdgeInsets.only(left: 2, bottom: 8),
+                              child: Text(
+                                'Paper size',
+                                style: TextStyle(
+                                  color: isDark ? const Color(0xFFF1F5F9) : const Color(0xFF0F172A),
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: _buildSelectableCard(
+                                    isDark: isDark,
+                                    isSelected: orderState.paperSize == 'A4',
+                                    onTap: () => ref.read(orderProvider.notifier).setPaperSize('A4'),
+                                    icon: Icon(
+                                      Icons.article_outlined,
+                                      size: 24,
+                                      color: orderState.paperSize == 'A4'
+                                          ? const Color(0xFF0891B2)
+                                          : (isDark ? const Color(0xFFCBD5E1) : const Color(0xFF0F172A)),
+                                    ),
+                                    title: 'A4',
+                                    subtitle: 'Standard',
+                                  ),
+                                ),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: _buildSelectableCard(
+                                    isDark: isDark,
+                                    isSelected: orderState.paperSize == 'A3',
+                                    onTap: () => ref.read(orderProvider.notifier).setPaperSize('A3'),
+                                    icon: Icon(
+                                      Icons.aspect_ratio_outlined,
+                                      size: 24,
+                                      color: orderState.paperSize == 'A3'
+                                          ? const Color(0xFF0891B2)
+                                          : (isDark ? const Color(0xFFCBD5E1) : const Color(0xFF0F172A)),
+                                    ),
+                                    title: 'A3',
+                                    subtitle: 'Large',
+                                  ),
+                                ),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: _buildSelectableCard(
+                                    isDark: isDark,
+                                    isSelected: orderState.paperSize == 'B5',
+                                    onTap: () => ref.read(orderProvider.notifier).setPaperSize('B5'),
+                                    icon: Icon(
+                                      Icons.menu_book_outlined,
+                                      size: 24,
+                                      color: orderState.paperSize == 'B5'
+                                          ? const Color(0xFF0891B2)
+                                          : (isDark ? const Color(0xFFCBD5E1) : const Color(0xFF0F172A)),
+                                    ),
+                                    title: 'B5',
+                                    subtitle: 'Book',
+                                  ),
+                                ),
+                              ],
+                            ),
                             const SizedBox(height: 20),
 
                             // Binding Option Section
