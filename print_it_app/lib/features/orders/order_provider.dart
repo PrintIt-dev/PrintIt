@@ -84,6 +84,7 @@ class OrderState {
   final String sides;
   final bool repeatImageOnGrid;
   final bool multiFileGrid;
+  final bool applyToAllFiles;
   final String pageRange;
   final String pickupType; // 'express' or 'scheduled'
   final DateTime? pickupTime;
@@ -114,6 +115,7 @@ class OrderState {
     this.sides = 'single',
     this.repeatImageOnGrid = true,
     this.multiFileGrid = false,
+    this.applyToAllFiles = false,
     this.pageRange = '',
     this.pickupType = 'express',
     this.pickupTime,
@@ -202,6 +204,7 @@ class OrderState {
     String? sides,
     bool? repeatImageOnGrid,
     bool? multiFileGrid,
+    bool? applyToAllFiles,
     String? pageRange,
     String? pickupType,
     DateTime? pickupTime,
@@ -232,6 +235,7 @@ class OrderState {
       sides: sides ?? this.sides,
       repeatImageOnGrid: repeatImageOnGrid ?? this.repeatImageOnGrid,
       multiFileGrid: multiFileGrid ?? this.multiFileGrid,
+      applyToAllFiles: applyToAllFiles ?? this.applyToAllFiles,
       pageRange: pageRange ?? this.pageRange,
       pickupType: pickupType ?? this.pickupType,
       pickupTime: pickupTime ?? this.pickupTime,
@@ -401,14 +405,52 @@ class OrderNotifier extends Notifier<OrderState> {
     _calculateTotal();
   }
 
+  void setApplyToAllFiles(bool val) {
+    state = state.copyWith(applyToAllFiles: val);
+  }
+
+  /// Copies the currently active file's print settings to ALL uploaded files
+  void applyCurrentSettingsToAll() {
+    if (state.files.isEmpty) return;
+    final current = state.files[state.activeFileIndex.clamp(0, state.files.length - 1)];
+    final updatedFiles = state.files.map((f) => f.copyWith(
+      colorMode: current.colorMode,
+      paperSize: current.paperSize,
+      copies: current.copies,
+      binding: current.binding,
+      pagesPerPaper: current.pagesPerPaper,
+      orientation: current.orientation,
+      sides: current.sides,
+      repeatImageOnGrid: current.repeatImageOnGrid,
+      printInstructions: current.printInstructions,
+    )).toList();
+
+    state = state.copyWith(
+      files: updatedFiles,
+      colorMode: current.colorMode,
+      paperSize: current.paperSize,
+      copies: current.copies,
+      binding: current.binding,
+      pagesPerPaper: current.pagesPerPaper,
+      orientation: current.orientation,
+      sides: current.sides,
+      repeatImageOnGrid: current.repeatImageOnGrid,
+      printInstructions: current.printInstructions,
+    );
+    _calculateTotal();
+  }
+
   void setColorMode(String mode) {
     state = state.copyWith(colorMode: mode);
-    // Also update the active file entry
-    if (state.files.isNotEmpty && state.activeFileIndex < state.files.length) {
-      final updated = state.files[state.activeFileIndex].copyWith(colorMode: mode);
-      final newFiles = List<FileEntry>.from(state.files);
-      newFiles[state.activeFileIndex] = updated;
-      state = state.copyWith(files: newFiles);
+    if (state.files.isNotEmpty) {
+      if (state.applyToAllFiles) {
+        state = state.copyWith(files: state.files.map((f) => f.copyWith(colorMode: mode)).toList());
+      } else if (state.activeFileIndex < state.files.length) {
+        final updated = state.files[state.activeFileIndex].copyWith(colorMode: mode);
+        final newFiles = List<FileEntry>.from(state.files);
+        newFiles[state.activeFileIndex] = updated;
+        state = state.copyWith(files: newFiles);
+      }
     }
     _calculateTotal();
   }
@@ -417,55 +459,74 @@ class OrderNotifier extends Notifier<OrderState> {
     int newCopies = state.copies + change;
     if (newCopies < 1) newCopies = 1;
     state = state.copyWith(copies: newCopies);
-    // Also update the active file entry
-    if (state.files.isNotEmpty && state.activeFileIndex < state.files.length) {
-      final updated = state.files[state.activeFileIndex].copyWith(copies: newCopies);
-      final newFiles = List<FileEntry>.from(state.files);
-      newFiles[state.activeFileIndex] = updated;
-      state = state.copyWith(files: newFiles);
+    if (state.files.isNotEmpty) {
+      if (state.applyToAllFiles) {
+        state = state.copyWith(files: state.files.map((f) => f.copyWith(copies: newCopies)).toList());
+      } else if (state.activeFileIndex < state.files.length) {
+        final updated = state.files[state.activeFileIndex].copyWith(copies: newCopies);
+        final newFiles = List<FileEntry>.from(state.files);
+        newFiles[state.activeFileIndex] = updated;
+        state = state.copyWith(files: newFiles);
+      }
     }
     _calculateTotal();
   }
 
   void setBinding(String binding) {
     state = state.copyWith(binding: binding);
-    if (state.files.isNotEmpty && state.activeFileIndex < state.files.length) {
-      final updated = state.files[state.activeFileIndex].copyWith(binding: binding);
-      final newFiles = List<FileEntry>.from(state.files);
-      newFiles[state.activeFileIndex] = updated;
-      state = state.copyWith(files: newFiles);
+    if (state.files.isNotEmpty) {
+      if (state.applyToAllFiles) {
+        state = state.copyWith(files: state.files.map((f) => f.copyWith(binding: binding)).toList());
+      } else if (state.activeFileIndex < state.files.length) {
+        final updated = state.files[state.activeFileIndex].copyWith(binding: binding);
+        final newFiles = List<FileEntry>.from(state.files);
+        newFiles[state.activeFileIndex] = updated;
+        state = state.copyWith(files: newFiles);
+      }
     }
     _calculateTotal();
   }
 
   void setPagesPerPaper(int count) {
     state = state.copyWith(pagesPerPaper: count);
-    if (state.files.isNotEmpty && state.activeFileIndex < state.files.length) {
-      final updated = state.files[state.activeFileIndex].copyWith(pagesPerPaper: count);
-      final newFiles = List<FileEntry>.from(state.files);
-      newFiles[state.activeFileIndex] = updated;
-      state = state.copyWith(files: newFiles);
+    if (state.files.isNotEmpty) {
+      if (state.applyToAllFiles) {
+        state = state.copyWith(files: state.files.map((f) => f.copyWith(pagesPerPaper: count)).toList());
+      } else if (state.activeFileIndex < state.files.length) {
+        final updated = state.files[state.activeFileIndex].copyWith(pagesPerPaper: count);
+        final newFiles = List<FileEntry>.from(state.files);
+        newFiles[state.activeFileIndex] = updated;
+        state = state.copyWith(files: newFiles);
+      }
     }
     _calculateTotal();
   }
 
   void setOrientation(String val) {
     state = state.copyWith(orientation: val);
-    if (state.files.isNotEmpty && state.activeFileIndex < state.files.length) {
-      final updated = state.files[state.activeFileIndex].copyWith(orientation: val);
-      final newFiles = List<FileEntry>.from(state.files);
-      newFiles[state.activeFileIndex] = updated;
-      state = state.copyWith(files: newFiles);
+    if (state.files.isNotEmpty) {
+      if (state.applyToAllFiles) {
+        state = state.copyWith(files: state.files.map((f) => f.copyWith(orientation: val)).toList());
+      } else if (state.activeFileIndex < state.files.length) {
+        final updated = state.files[state.activeFileIndex].copyWith(orientation: val);
+        final newFiles = List<FileEntry>.from(state.files);
+        newFiles[state.activeFileIndex] = updated;
+        state = state.copyWith(files: newFiles);
+      }
     }
   }
 
   void setSides(String val) {
     state = state.copyWith(sides: val);
-    if (state.files.isNotEmpty && state.activeFileIndex < state.files.length) {
-      final updated = state.files[state.activeFileIndex].copyWith(sides: val);
-      final newFiles = List<FileEntry>.from(state.files);
-      newFiles[state.activeFileIndex] = updated;
-      state = state.copyWith(files: newFiles);
+    if (state.files.isNotEmpty) {
+      if (state.applyToAllFiles) {
+        state = state.copyWith(files: state.files.map((f) => f.copyWith(sides: val)).toList());
+      } else if (state.activeFileIndex < state.files.length) {
+        final updated = state.files[state.activeFileIndex].copyWith(sides: val);
+        final newFiles = List<FileEntry>.from(state.files);
+        newFiles[state.activeFileIndex] = updated;
+        state = state.copyWith(files: newFiles);
+      }
     }
     _calculateTotal();
   }
@@ -473,32 +534,44 @@ class OrderNotifier extends Notifier<OrderState> {
   void setPaperSize(String size) {
     final validSize = size.toUpperCase();
     state = state.copyWith(paperSize: validSize);
-    if (state.files.isNotEmpty && state.activeFileIndex < state.files.length) {
-      final updated = state.files[state.activeFileIndex].copyWith(paperSize: validSize);
-      final newFiles = List<FileEntry>.from(state.files);
-      newFiles[state.activeFileIndex] = updated;
-      state = state.copyWith(files: newFiles);
+    if (state.files.isNotEmpty) {
+      if (state.applyToAllFiles) {
+        state = state.copyWith(files: state.files.map((f) => f.copyWith(paperSize: validSize)).toList());
+      } else if (state.activeFileIndex < state.files.length) {
+        final updated = state.files[state.activeFileIndex].copyWith(paperSize: validSize);
+        final newFiles = List<FileEntry>.from(state.files);
+        newFiles[state.activeFileIndex] = updated;
+        state = state.copyWith(files: newFiles);
+      }
     }
     _calculateTotal();
   }
 
   void setRepeatImageOnGrid(bool val) {
     state = state.copyWith(repeatImageOnGrid: val);
-    if (state.files.isNotEmpty && state.activeFileIndex < state.files.length) {
-      final updated = state.files[state.activeFileIndex].copyWith(repeatImageOnGrid: val);
-      final newFiles = List<FileEntry>.from(state.files);
-      newFiles[state.activeFileIndex] = updated;
-      state = state.copyWith(files: newFiles);
+    if (state.files.isNotEmpty) {
+      if (state.applyToAllFiles) {
+        state = state.copyWith(files: state.files.map((f) => f.copyWith(repeatImageOnGrid: val)).toList());
+      } else if (state.activeFileIndex < state.files.length) {
+        final updated = state.files[state.activeFileIndex].copyWith(repeatImageOnGrid: val);
+        final newFiles = List<FileEntry>.from(state.files);
+        newFiles[state.activeFileIndex] = updated;
+        state = state.copyWith(files: newFiles);
+      }
     }
   }
 
   void setPrintInstructions(String text) {
     state = state.copyWith(printInstructions: text);
-    if (state.files.isNotEmpty && state.activeFileIndex < state.files.length) {
-      final updated = state.files[state.activeFileIndex].copyWith(printInstructions: text);
-      final newFiles = List<FileEntry>.from(state.files);
-      newFiles[state.activeFileIndex] = updated;
-      state = state.copyWith(files: newFiles);
+    if (state.files.isNotEmpty) {
+      if (state.applyToAllFiles) {
+        state = state.copyWith(files: state.files.map((f) => f.copyWith(printInstructions: text)).toList());
+      } else if (state.activeFileIndex < state.files.length) {
+        final updated = state.files[state.activeFileIndex].copyWith(printInstructions: text);
+        final newFiles = List<FileEntry>.from(state.files);
+        newFiles[state.activeFileIndex] = updated;
+        state = state.copyWith(files: newFiles);
+      }
     }
   }
 

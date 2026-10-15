@@ -412,11 +412,15 @@ class _NUpImagePreview extends StatelessWidget {
       if (pagesPerPaper == 2) { columns = 1; rows = 2; }
       else if (pagesPerPaper == 4) { columns = 2; rows = 2; }
       else if (pagesPerPaper == 6) { columns = 2; rows = 3; }
+      else if (pagesPerPaper == 9) { columns = 3; rows = 3; }
+      else if (pagesPerPaper == 16) { columns = 4; rows = 4; }
       else { columns = 2; rows = 2; }
     } else {
       if (pagesPerPaper == 2) { columns = 2; rows = 1; }
       else if (pagesPerPaper == 4) { columns = 2; rows = 2; }
       else if (pagesPerPaper == 6) { columns = 3; rows = 2; }
+      else if (pagesPerPaper == 9) { columns = 3; rows = 3; }
+      else if (pagesPerPaper == 16) { columns = 4; rows = 4; }
       else { columns = 2; rows = 2; }
     }
 
@@ -533,11 +537,15 @@ class _NUpMultiImagePreview extends StatelessWidget {
       if (pagesPerPaper == 2) { columns = 1; rows = 2; }
       else if (pagesPerPaper == 4) { columns = 2; rows = 2; }
       else if (pagesPerPaper == 6) { columns = 2; rows = 3; }
+      else if (pagesPerPaper == 9) { columns = 3; rows = 3; }
+      else if (pagesPerPaper == 16) { columns = 4; rows = 4; }
       else { columns = 2; rows = 2; }
     } else {
       if (pagesPerPaper == 2) { columns = 2; rows = 1; }
       else if (pagesPerPaper == 4) { columns = 2; rows = 2; }
       else if (pagesPerPaper == 6) { columns = 3; rows = 2; }
+      else if (pagesPerPaper == 9) { columns = 3; rows = 3; }
+      else if (pagesPerPaper == 16) { columns = 4; rows = 4; }
       else { columns = 2; rows = 2; }
     }
 
@@ -1140,8 +1148,8 @@ class _PptPreviewState extends State<_PptPreview> {
   }
 
   Widget _buildNUpGrid(int sheetIdx, int totalSlides, List<PptSlideInfo> slides) {
-    int columns = widget.pagesPerPaper == 2 ? 1 : 2;
-    int rows = widget.pagesPerPaper <= 4 ? 2 : 3;
+    int columns = widget.pagesPerPaper == 2 ? 1 : (widget.pagesPerPaper == 9 ? 3 : (widget.pagesPerPaper == 16 ? 4 : 2));
+    int rows = widget.pagesPerPaper <= 4 ? 2 : (widget.pagesPerPaper == 6 ? 3 : (widget.pagesPerPaper == 9 ? 3 : 4));
     int startSlide = sheetIdx * widget.pagesPerPaper + 1;
 
     return Container(
@@ -1280,8 +1288,8 @@ class _DocxPreviewState extends State<_DocxPreview> {
   }
 
   Widget _buildNUpGrid(int sheetIdx, int totalPages, List<DocxPageInfo> pages) {
-    int columns = widget.pagesPerPaper == 2 ? 1 : 2;
-    int rows = widget.pagesPerPaper <= 4 ? 2 : 3;
+    int columns = widget.pagesPerPaper == 2 ? 1 : (widget.pagesPerPaper == 9 ? 3 : (widget.pagesPerPaper == 16 ? 4 : 2));
+    int rows = widget.pagesPerPaper <= 4 ? 2 : (widget.pagesPerPaper == 6 ? 3 : (widget.pagesPerPaper == 9 ? 3 : 4));
     int startPage = sheetIdx * widget.pagesPerPaper + 1;
 
     return Container(

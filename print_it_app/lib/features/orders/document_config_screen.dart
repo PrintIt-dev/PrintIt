@@ -128,6 +128,7 @@ class _DocumentConfigScreenState extends ConsumerState<DocumentConfigScreen> {
                                       children: [
                                         PageView.builder(
                                           controller: _pageController,
+                                          physics: const BouncingScrollPhysics(),
                                           itemCount: totalPreviewSheets < 1 ? 1 : totalPreviewSheets,
                                           onPageChanged: (index) {
                                             setState(() {
@@ -141,11 +142,6 @@ class _DocumentConfigScreenState extends ConsumerState<DocumentConfigScreen> {
                                             final entry = isMultiFileGrid
                                                 ? (orderState.files.isNotEmpty ? orderState.files[0] : activeFile!)
                                                 : orderState.files[index];
-                                            final fileName = entry.file.name.toLowerCase();
-                                            final isImage = fileName.endsWith('.jpg') ||
-                                                fileName.endsWith('.jpeg') ||
-                                                fileName.endsWith('.png') ||
-                                                fileName.endsWith('.webp');
                                             return LiveFilePreview(
                                               fileEntry: entry,
                                               allFileEntries: isMultiFileGrid ? orderState.files : null,
@@ -154,102 +150,17 @@ class _DocumentConfigScreenState extends ConsumerState<DocumentConfigScreen> {
                                               pagesPerPaper: orderState.pagesPerPaper,
                                               orientation: orderState.orientation,
                                               repeatImageOnGrid: orderState.repeatImageOnGrid,
-                                              bottomOverlay: Positioned(
-                                                bottom: 6,
-                                                left: 0,
-                                                right: 0,
-                                                child: Center(
-                                                  child: Container(
-                                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                                                    decoration: BoxDecoration(
-                                                      color: const Color(0xFF1E293B).withValues(alpha: 0.94),
-                                                      borderRadius: BorderRadius.circular(12),
-                                                      boxShadow: [
-                                                        BoxShadow(
-                                                          color: Colors.black.withValues(alpha: 0.25),
-                                                          blurRadius: 8,
-                                                          offset: const Offset(0, 2),
-                                                        ),
-                                                      ],
-                                                    ),
-                                                    child: Row(
-                                                      mainAxisSize: MainAxisSize.min,
-                                                      children: [
-                                                        const Text(
-                                                          'PAGES / SHEET',
-                                                          style: TextStyle(
-                                                            fontSize: 9,
-                                                            fontWeight: FontWeight.w600,
-                                                            letterSpacing: 0.6,
-                                                            color: Color(0xFFCBD5E1),
-                                                          ),
-                                                        ),
-                                                        const SizedBox(width: 8),
-                                                        _buildOverlayPageButton(ref, 1, orderState.pagesPerPaper == 1),
-                                                        const SizedBox(width: 4),
-                                                        _buildOverlayPageButton(ref, 2, orderState.pagesPerPaper == 2),
-                                                        const SizedBox(width: 4),
-                                                        _buildOverlayPageButton(ref, 4, orderState.pagesPerPaper == 4),
-                                                        const SizedBox(width: 4),
-                                                        _buildOverlayPageButton(ref, 6, orderState.pagesPerPaper == 6),
-                                                        if (isImage && orderState.pagesPerPaper > 1) ...[
-                                                          const SizedBox(width: 6),
-                                                          Container(width: 1, height: 14, color: Colors.white24),
-                                                          const SizedBox(width: 6),
-                                                          GestureDetector(
-                                                            onTap: () => ref
-                                                                .read(orderProvider.notifier)
-                                                                .setRepeatImageOnGrid(!orderState.repeatImageOnGrid),
-                                                            child: Container(
-                                                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                                              decoration: BoxDecoration(
-                                                                color: orderState.repeatImageOnGrid
-                                                                    ? const Color(0xFF0284C7).withValues(alpha: 0.35)
-                                                                    : Colors.transparent,
-                                                                borderRadius: BorderRadius.circular(6),
-                                                                border: Border.all(
-                                                                  color: orderState.repeatImageOnGrid
-                                                                      ? const Color(0xFF38BDF8)
-                                                                      : const Color(0xFF64748B),
-                                                                  width: 0.8,
-                                                                ),
-                                                              ),
-                                                              child: Row(
-                                                                mainAxisSize: MainAxisSize.min,
-                                                                children: [
-                                                                  Icon(
-                                                                    orderState.repeatImageOnGrid
-                                                                        ? Icons.check_box_rounded
-                                                                        : Icons.check_box_outline_blank_rounded,
-                                                                    size: 13,
-                                                                    color: orderState.repeatImageOnGrid
-                                                                        ? const Color(0xFF38BDF8)
-                                                                        : const Color(0xFF94A3B8),
-                                                                  ),
-                                                                  const SizedBox(width: 3),
-                                                                  Text(
-                                                                    'Repeat',
-                                                                    style: TextStyle(
-                                                                      fontSize: 10,
-                                                                      fontWeight: FontWeight.w600,
-                                                                      color: orderState.repeatImageOnGrid
-                                                                          ? Colors.white
-                                                                          : const Color(0xFF94A3B8),
-                                                                    ),
-                                                                  ),
-                                                                ],
-                                                              ),
-                                                            ),
-                                                          ),
-                                                        ],
-                                                      ],
-                                                    ),
-                                                  ),
-                                                ),
-                                              ),
+                                              bottomOverlay: null,
                                             );
                                           },
                                         ),
+                                        // PDF Switcher Dropdown top-left
+                                        if (orderState.files.isNotEmpty)
+                                          Positioned(
+                                            top: 2,
+                                            left: 2,
+                                            child: _buildFileDropdownSelector(context, ref, orderState, isDark),
+                                          ),
                                         // Close Button top-right
                                         Positioned(
                                           top: 2,
@@ -306,6 +217,141 @@ class _DocumentConfigScreenState extends ConsumerState<DocumentConfigScreen> {
                               ),
                             ),
                             const SizedBox(height: 16),
+
+                            // Apply Settings to All Files Card (when 2+ files/photos uploaded)
+                            if (orderState.files.length > 1) ...[
+                              Container(
+                                padding: const EdgeInsets.all(16),
+                                decoration: BoxDecoration(
+                                  color: isDark
+                                      ? const Color(0xFF121929).withValues(alpha: 0.90)
+                                      : Colors.white.withValues(alpha: 0.88),
+                                  borderRadius: BorderRadius.circular(20),
+                                  border: Border.all(
+                                    color: orderState.applyToAllFiles
+                                        ? const Color(0xFF0284C7).withValues(alpha: 0.6)
+                                        : (isDark ? const Color(0xFF334155).withValues(alpha: 0.50) : Colors.white.withValues(alpha: 0.75)),
+                                    width: 1.0,
+                                  ),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: isDark
+                                          ? Colors.black.withValues(alpha: 0.25)
+                                          : const Color(0xFF0C4A6E).withValues(alpha: 0.05),
+                                      blurRadius: 16,
+                                      offset: const Offset(0, 5),
+                                    ),
+                                  ],
+                                ),
+                                child: Column(
+                                  children: [
+                                    Row(
+                                      children: [
+                                        Container(
+                                          width: 38,
+                                          height: 38,
+                                          decoration: BoxDecoration(
+                                            color: orderState.applyToAllFiles
+                                                ? (isDark ? const Color(0xFF0C4A6E) : const Color(0xFFE0F2FE))
+                                                : (isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9)),
+                                            borderRadius: BorderRadius.circular(12),
+                                          ),
+                                          child: Icon(
+                                            Icons.copy_all_rounded,
+                                            size: 20,
+                                            color: orderState.applyToAllFiles
+                                                ? const Color(0xFF0284C7)
+                                                : (isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B)),
+                                          ),
+                                        ),
+                                        const SizedBox(width: 12),
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            children: [
+                                              Text(
+                                                'Apply settings to all ${orderState.files.length} PDFs',
+                                                style: TextStyle(
+                                                  color: isDark ? Colors.white : const Color(0xFF0F172A),
+                                                  fontSize: 14,
+                                                  fontWeight: FontWeight.w600,
+                                                ),
+                                              ),
+                                              const SizedBox(height: 2),
+                                              Text(
+                                                'Sync color, duplex, paper size & copies across all files',
+                                                style: TextStyle(
+                                                  color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+                                                  fontSize: 11,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                        Switch.adaptive(
+                                          value: orderState.applyToAllFiles,
+                                          activeTrackColor: const Color(0xFF0284C7),
+                                          onChanged: (val) {
+                                            HapticFeedback.selectionClick();
+                                            ref.read(orderProvider.notifier).setApplyToAllFiles(val);
+                                            if (val) {
+                                              ref.read(orderProvider.notifier).applyCurrentSettingsToAll();
+                                              ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                                              ScaffoldMessenger.of(context).showSnackBar(
+                                                SnackBar(
+                                                  content: Text('Settings synced across all ${orderState.files.length} PDFs'),
+                                                  backgroundColor: const Color(0xFF0284C7),
+                                                  behavior: SnackBarBehavior.floating,
+                                                  duration: const Duration(milliseconds: 1500),
+                                                ),
+                                              );
+                                            }
+                                          },
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 10),
+                                    const Divider(height: 1, color: Colors.white12),
+                                    const SizedBox(height: 8),
+                                    InkWell(
+                                      onTap: () {
+                                        HapticFeedback.mediumImpact();
+                                        ref.read(orderProvider.notifier).applyCurrentSettingsToAll();
+                                        ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                                        ScaffoldMessenger.of(context).showSnackBar(
+                                          SnackBar(
+                                            content: Text('File ${orderState.activeFileIndex + 1} settings copied to all ${orderState.files.length} PDFs!'),
+                                            backgroundColor: const Color(0xFF0284C7),
+                                            behavior: SnackBarBehavior.floating,
+                                            duration: const Duration(milliseconds: 1500),
+                                          ),
+                                        );
+                                      },
+                                      borderRadius: BorderRadius.circular(10),
+                                      child: Padding(
+                                        padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 6),
+                                        child: Row(
+                                          mainAxisAlignment: MainAxisAlignment.center,
+                                          children: [
+                                            const Icon(Icons.done_all_rounded, size: 16, color: Color(0xFF0284C7)),
+                                            const SizedBox(width: 6),
+                                            Text(
+                                              'Copy File ${orderState.activeFileIndex + 1} settings to all PDFs now',
+                                              style: const TextStyle(
+                                                fontSize: 12,
+                                                fontWeight: FontWeight.w600,
+                                                color: Color(0xFF0284C7),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(height: 16),
+                            ],
 
                             // Multi-file Grid Collation Card (when 2+ files/photos uploaded)
                             if (orderState.files.length > 1) ...[
@@ -405,99 +451,25 @@ class _DocumentConfigScreenState extends ConsumerState<DocumentConfigScreen> {
                                               color: isDark ? const Color(0xFFCBD5E1) : const Color(0xFF334155),
                                             ),
                                           ),
-                                          Row(
-                                            children: [
-                                              _buildGridChoiceChip(ref, 2, '2-up', orderState.pagesPerPaper == 2, isDark),
-                                              const SizedBox(width: 6),
-                                              _buildGridChoiceChip(ref, 4, '4-up', orderState.pagesPerPaper == 4, isDark),
-                                              const SizedBox(width: 6),
-                                              _buildGridChoiceChip(ref, 6, '6-up', orderState.pagesPerPaper == 6, isDark),
-                                            ],
+                                          SingleChildScrollView(
+                                            scrollDirection: Axis.horizontal,
+                                            child: Row(
+                                              children: [
+                                                _buildGridChoiceChip(ref, 2, '2-up', orderState.pagesPerPaper == 2, isDark),
+                                                const SizedBox(width: 4),
+                                                _buildGridChoiceChip(ref, 4, '4-up', orderState.pagesPerPaper == 4, isDark),
+                                                const SizedBox(width: 4),
+                                                _buildGridChoiceChip(ref, 6, '6-up', orderState.pagesPerPaper == 6, isDark),
+                                                const SizedBox(width: 4),
+                                                _buildGridChoiceChip(ref, 9, '9-up', orderState.pagesPerPaper == 9, isDark),
+                                                const SizedBox(width: 4),
+                                                _buildGridChoiceChip(ref, 16, '16-up', orderState.pagesPerPaper == 16, isDark),
+                                              ],
+                                            ),
                                           ),
                                         ],
                                       ),
                                     ],
-                                  ],
-                                ),
-                              ),
-                              const SizedBox(height: 16),
-                            ],
-
-                            // Repeat Photo Across Sheet Card
-                            if (isImageFile && orderState.pagesPerPaper > 1) ...[
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
-                                decoration: BoxDecoration(
-                                  color: isDark
-                                      ? const Color(0xFF121929).withValues(alpha: 0.90)
-                                      : Colors.white.withValues(alpha: 0.88),
-                                  borderRadius: BorderRadius.circular(20),
-                                  border: Border.all(
-                                    color: orderState.repeatImageOnGrid
-                                        ? (isDark ? const Color(0xFF0284C7).withValues(alpha: 0.4) : const Color(0xFFBAE6FD))
-                                        : (isDark ? const Color(0xFF334155).withValues(alpha: 0.50) : Colors.white.withValues(alpha: 0.75)),
-                                    width: 1.0,
-                                  ),
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: isDark
-                                          ? Colors.black.withValues(alpha: 0.25)
-                                          : const Color(0xFF0C4A6E).withValues(alpha: 0.05),
-                                      blurRadius: 16,
-                                      offset: const Offset(0, 5),
-                                    ),
-                                  ],
-                                ),
-                                child: Row(
-                                  children: [
-                                    Container(
-                                      width: 40,
-                                      height: 40,
-                                      decoration: BoxDecoration(
-                                        color: orderState.repeatImageOnGrid
-                                            ? (isDark ? const Color(0xFF0C4A6E) : const Color(0xFFE0F2FE))
-                                            : (isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9)),
-                                        borderRadius: BorderRadius.circular(12),
-                                      ),
-                                      child: Icon(
-                                        Icons.grid_view_rounded,
-                                        size: 22,
-                                        color: orderState.repeatImageOnGrid
-                                            ? const Color(0xFF0284C7)
-                                            : (isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B)),
-                                      ),
-                                    ),
-                                    const SizedBox(width: 14),
-                                    Expanded(
-                                      child: Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
-                                        children: [
-                                          Text(
-                                            'Repeat Photo Across Sheet',
-                                            style: TextStyle(
-                                              color: isDark ? Colors.white : const Color(0xFF0F172A),
-                                              fontSize: 14,
-                                              fontWeight: FontWeight.w600,
-                                            ),
-                                          ),
-                                          const SizedBox(height: 2),
-                                          Text(
-                                            'Tile this image across all ${orderState.pagesPerPaper} layout blocks',
-                                            style: TextStyle(
-                                              color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
-                                              fontSize: 12,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                    Switch.adaptive(
-                                      value: orderState.repeatImageOnGrid,
-                                      activeTrackColor: const Color(0xFF0284C7),
-                                      onChanged: (val) {
-                                        ref.read(orderProvider.notifier).setRepeatImageOnGrid(val);
-                                      },
-                                    ),
                                   ],
                                 ),
                               ),
@@ -896,6 +868,149 @@ class _DocumentConfigScreenState extends ConsumerState<DocumentConfigScreen> {
                                 ),
                               ],
                             ),
+                            const SizedBox(height: 20),
+
+                            // Pages per Sheet Section (1, 2, 4, 6, 9, 16)
+                            Padding(
+                              padding: const EdgeInsets.only(left: 2, bottom: 8),
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Text(
+                                    'Pages per sheet',
+                                    style: TextStyle(
+                                      color: isDark ? const Color(0xFFF1F5F9) : const Color(0xFF0F172A),
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                  if (orderState.pagesPerPaper > 1)
+                                    Text(
+                                      '${orderState.pagesPerPaper}-up layout',
+                                      style: const TextStyle(
+                                        color: Color(0xFF0284C7),
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                ],
+                              ),
+                            ),
+                            Row(
+                              children: [
+                                _buildNUpCard(
+                                  ref: ref,
+                                  count: 1,
+                                  label: '1 Page',
+                                  subtitle: 'Standard',
+                                  isSelected: orderState.pagesPerPaper == 1,
+                                  isDark: isDark,
+                                ),
+                                const SizedBox(width: 8),
+                                _buildNUpCard(
+                                  ref: ref,
+                                  count: 2,
+                                  label: '2 Pages',
+                                  subtitle: '2-up',
+                                  isSelected: orderState.pagesPerPaper == 2,
+                                  isDark: isDark,
+                                ),
+                                const SizedBox(width: 8),
+                                _buildNUpCard(
+                                  ref: ref,
+                                  count: 4,
+                                  label: '4 Pages',
+                                  subtitle: '4-up',
+                                  isSelected: orderState.pagesPerPaper == 4,
+                                  isDark: isDark,
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            Row(
+                              children: [
+                                _buildNUpCard(
+                                  ref: ref,
+                                  count: 6,
+                                  label: '6 Pages',
+                                  subtitle: '6-up',
+                                  isSelected: orderState.pagesPerPaper == 6,
+                                  isDark: isDark,
+                                ),
+                                const SizedBox(width: 8),
+                                _buildNUpCard(
+                                  ref: ref,
+                                  count: 9,
+                                  label: '9 Pages',
+                                  subtitle: '3×3 grid',
+                                  isSelected: orderState.pagesPerPaper == 9,
+                                  isDark: isDark,
+                                ),
+                                const SizedBox(width: 8),
+                                _buildNUpCard(
+                                  ref: ref,
+                                  count: 16,
+                                  label: '16 Pages',
+                                  subtitle: '4×4 grid',
+                                  isSelected: orderState.pagesPerPaper == 16,
+                                  isDark: isDark,
+                                ),
+                              ],
+                            ),
+                            if (isImageFile && orderState.pagesPerPaper > 1) ...[
+                              const SizedBox(height: 10),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                                decoration: BoxDecoration(
+                                  color: isDark
+                                      ? const Color(0xFF0F172A).withValues(alpha: 0.55)
+                                      : Colors.white.withValues(alpha: 0.65),
+                                  borderRadius: BorderRadius.circular(14),
+                                  border: Border.all(
+                                    color: isDark ? Colors.white12 : const Color(0xFFE2E8F0),
+                                  ),
+                                ),
+                                child: Row(
+                                  children: [
+                                    Icon(
+                                      Icons.grid_view_rounded,
+                                      size: 18,
+                                      color: isDark ? const Color(0xFF38BDF8) : const Color(0xFF0284C7),
+                                    ),
+                                    const SizedBox(width: 10),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            'Repeat Photo Across Sheet',
+                                            style: TextStyle(
+                                              color: isDark ? Colors.white : const Color(0xFF0F172A),
+                                              fontSize: 13,
+                                              fontWeight: FontWeight.w600,
+                                            ),
+                                          ),
+                                          Text(
+                                            'Tile this photo across all ${orderState.pagesPerPaper} layout cells',
+                                            style: TextStyle(
+                                              color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+                                              fontSize: 11,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    Switch.adaptive(
+                                      value: orderState.repeatImageOnGrid,
+                                      activeTrackColor: const Color(0xFF0284C7),
+                                      onChanged: (val) {
+                                        ref.read(orderProvider.notifier).setRepeatImageOnGrid(val);
+                                      },
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
                             const SizedBox(height: 20),
 
                             // Binding Option Section
@@ -1660,32 +1775,256 @@ class _DocumentConfigScreenState extends ConsumerState<DocumentConfigScreen> {
     );
   }
 
-  Widget _buildOverlayPageButton(WidgetRef ref, int count, bool isSelected) {
-    return GestureDetector(
-      onTap: () {
-        HapticFeedback.selectionClick();
-        ref.read(orderProvider.notifier).setPagesPerPaper(count);
-      },
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 150),
-        width: 24,
-        height: 24,
-        alignment: Alignment.center,
-        decoration: BoxDecoration(
-          color: isSelected ? const Color(0xFF0284C7) : Colors.transparent,
-          borderRadius: BorderRadius.circular(6),
+  Widget _buildFileDropdownSelector(BuildContext context, WidgetRef ref, OrderState orderState, bool isDark) {
+    final safeIndex = orderState.activeFileIndex.clamp(0, orderState.files.isNotEmpty ? orderState.files.length - 1 : 0);
+    final activeEntry = orderState.files.isNotEmpty ? orderState.files[safeIndex] : null;
+    final fileName = activeEntry?.file.name ?? 'File 1';
+
+    return Container(
+      height: 28,
+      decoration: BoxDecoration(
+        color: const Color(0xFF0F172A).withValues(alpha: 0.82),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: isDark ? const Color(0xFF38BDF8).withValues(alpha: 0.4) : const Color(0xFF0284C7).withValues(alpha: 0.35),
+          width: 0.9,
         ),
-        child: Text(
-          '$count',
-          style: TextStyle(
-            color: isSelected ? Colors.white : const Color(0xFFCBD5E1),
-            fontSize: 11,
-            fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.25),
+            blurRadius: 4,
+          ),
+        ],
+      ),
+      child: Theme(
+        data: Theme.of(context).copyWith(
+          popupMenuTheme: PopupMenuThemeData(
+            color: isDark ? const Color(0xFF1E293B) : Colors.white,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+              side: BorderSide(
+                color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
+              ),
+            ),
+            elevation: 10,
+          ),
+        ),
+        child: PopupMenuButton<int>(
+          tooltip: 'Switch PDF Document',
+          offset: const Offset(0, 32),
+          initialValue: safeIndex,
+          onSelected: (int index) {
+            HapticFeedback.selectionClick();
+            ref.read(orderProvider.notifier).setActiveFileIndex(index);
+            if (_pageController.hasClients) {
+              _pageController.jumpToPage(index);
+            }
+          },
+          itemBuilder: (BuildContext context) {
+            return List.generate(orderState.files.length, (i) {
+              final entry = orderState.files[i];
+              final isSelected = i == safeIndex;
+              return PopupMenuItem<int>(
+                value: i,
+                child: Row(
+                  children: [
+                    Container(
+                      width: 22,
+                      height: 22,
+                      decoration: BoxDecoration(
+                        color: isSelected
+                            ? const Color(0xFF0284C7)
+                            : (isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
+                        shape: BoxShape.circle,
+                      ),
+                      alignment: Alignment.center,
+                      child: Text(
+                        '${i + 1}',
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                          color: isSelected ? Colors.white : (isDark ? const Color(0xFFCBD5E1) : const Color(0xFF475569)),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            entry.file.name,
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
+                              color: isDark ? Colors.white : const Color(0xFF0F172A),
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          Text(
+                            '${entry.pages} pages • ${entry.colorMode} • ${entry.sides == 'double' ? 'Back-to-Back' : 'Single Sided'}',
+                            style: TextStyle(
+                              fontSize: 10,
+                              color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    if (isSelected) ...[
+                      const SizedBox(width: 8),
+                      const Icon(Icons.check_circle_rounded, size: 16, color: Color(0xFF38BDF8)),
+                    ],
+                  ],
+                ),
+              );
+            });
+          },
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(
+                  Icons.picture_as_pdf_rounded,
+                  size: 13,
+                  color: Color(0xFF38BDF8),
+                ),
+                const SizedBox(width: 5),
+                ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 140),
+                  child: Text(
+                    '${safeIndex + 1}/${orderState.files.length}: $fileName',
+                    style: const TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.white,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                const SizedBox(width: 3),
+                const Icon(
+                  Icons.keyboard_arrow_down_rounded,
+                  size: 14,
+                  color: Color(0xFF94A3B8),
+                ),
+              ],
+            ),
           ),
         ),
       ),
     );
   }
+
+  Widget _buildNUpCard({
+    required WidgetRef ref,
+    required int count,
+    required String label,
+    required String subtitle,
+    required bool isSelected,
+    required bool isDark,
+  }) {
+    return Expanded(
+      child: GestureDetector(
+        onTap: () {
+          HapticFeedback.selectionClick();
+          ref.read(orderProvider.notifier).setPagesPerPaper(count);
+        },
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
+          decoration: BoxDecoration(
+            color: isSelected
+                ? (isDark ? const Color(0xFF0284C7).withValues(alpha: 0.18) : null)
+                : (isDark ? const Color(0xFF0F172A).withValues(alpha: 0.55) : Colors.white.withValues(alpha: 0.65)),
+            gradient: isSelected
+                ? (isDark
+                    ? LinearGradient(
+                        colors: [
+                          const Color(0xFF0284C7).withValues(alpha: 0.28),
+                          const Color(0xFF0284C7).withValues(alpha: 0.15),
+                        ],
+                      )
+                    : const LinearGradient(
+                        colors: [
+                          Color(0xFFE0F2FE),
+                          Color(0xFFF0F9FF),
+                        ],
+                      ))
+                : null,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: isSelected
+                  ? (isDark ? const Color(0xFF38BDF8) : const Color(0xFF0284C7))
+                  : Colors.transparent,
+              width: isSelected ? 1.5 : 0,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: isDark ? Colors.black.withValues(alpha: 0.15) : const Color(0x1064748B),
+                blurRadius: 6,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 30,
+                height: 30,
+                decoration: BoxDecoration(
+                  color: isSelected
+                      ? (isDark ? const Color(0xFF0C4A6E) : const Color(0xFFBAE6FD))
+                      : (isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9)),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                alignment: Alignment.center,
+                child: Text(
+                  '$count',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.bold,
+                    color: isSelected
+                        ? (isDark ? const Color(0xFF38BDF8) : const Color(0xFF0284C7))
+                        : (isDark ? const Color(0xFFCBD5E1) : const Color(0xFF475569)),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 5),
+              Text(
+                label,
+                style: TextStyle(
+                  color: isDark ? Colors.white : const Color(0xFF0F172A),
+                  fontSize: 11,
+                  fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+              const SizedBox(height: 1),
+              Text(
+                subtitle,
+                style: TextStyle(
+                  color: isSelected
+                      ? (isDark ? const Color(0xFF38BDF8) : const Color(0xFF0284C7))
+                      : (isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B)),
+                  fontSize: 9,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
 
   Widget _buildGridChoiceChip(WidgetRef ref, int count, String label, bool isSelected, bool isDark) {
     return GestureDetector(
