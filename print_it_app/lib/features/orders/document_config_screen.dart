@@ -38,7 +38,11 @@ class _DocumentConfigScreenState extends ConsumerState<DocumentConfigScreen> {
   Widget build(BuildContext context) {
     final orderState = ref.watch(orderProvider);
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final activeFile = orderState.activeFile;
+    final activeIndex = orderState.activeFileIndex.clamp(0, orderState.files.isNotEmpty ? orderState.files.length - 1 : 0);
+    final activeFile = orderState.files.isNotEmpty ? orderState.files[activeIndex] : null;
+    final activePagesPerPaper = activeFile?.pagesPerPaper ?? orderState.pagesPerPaper;
+    final activeSides = activeFile?.sides ?? orderState.sides;
+    final activeColorMode = activeFile?.colorMode ?? orderState.colorMode;
     final isImageFile = activeFile != null &&
         (activeFile.file.name.toLowerCase().endsWith('.jpg') ||
             activeFile.file.name.toLowerCase().endsWith('.jpeg') ||
@@ -96,6 +100,12 @@ class _DocumentConfigScreenState extends ConsumerState<DocumentConfigScreen> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
+                            // Document Switcher Tabs (when 2+ files uploaded)
+                            if (orderState.files.length > 1 && !isMultiFileGrid) ...[
+                              _buildDocumentTabsSelector(context, ref, orderState, activeIndex, isDark),
+                              const SizedBox(height: 12),
+                            ],
+
                             // Document Preview Card matching Stitch
                             Container(
                               padding: const EdgeInsets.all(16),
@@ -147,13 +157,81 @@ class _DocumentConfigScreenState extends ConsumerState<DocumentConfigScreen> {
                                               allFileEntries: isMultiFileGrid ? orderState.files : null,
                                               multiFileGrid: isMultiFileGrid,
                                               sheetIndex: isMultiFileGrid ? index : 0,
-                                              pagesPerPaper: orderState.pagesPerPaper,
-                                              orientation: orderState.orientation,
-                                              repeatImageOnGrid: orderState.repeatImageOnGrid,
+                                              pagesPerPaper: isMultiFileGrid ? orderState.pagesPerPaper : entry.pagesPerPaper,
+                                              orientation: isMultiFileGrid ? orderState.orientation : entry.orientation,
+                                              repeatImageOnGrid: entry.repeatImageOnGrid,
                                               bottomOverlay: null,
                                             );
                                           },
                                         ),
+                                        // Left arrow navigation for multi-document
+                                        if (orderState.files.length > 1 && !isMultiFileGrid && activeIndex > 0)
+                                          Positioned(
+                                            left: 4,
+                                            top: 145,
+                                            child: GestureDetector(
+                                              onTap: () {
+                                                HapticFeedback.selectionClick();
+                                                final prevIndex = activeIndex - 1;
+                                                ref.read(orderProvider.notifier).setActiveFileIndex(prevIndex);
+                                                if (_pageController.hasClients) {
+                                                  _pageController.previousPage(
+                                                    duration: const Duration(milliseconds: 250),
+                                                    curve: Curves.easeInOut,
+                                                  );
+                                                }
+                                              },
+                                              child: Container(
+                                                width: 30,
+                                                height: 30,
+                                                decoration: BoxDecoration(
+                                                  color: const Color(0xFF0F172A).withValues(alpha: 0.75),
+                                                  shape: BoxShape.circle,
+                                                  boxShadow: [
+                                                    BoxShadow(
+                                                      color: Colors.black.withValues(alpha: 0.30),
+                                                      blurRadius: 4,
+                                                    ),
+                                                  ],
+                                                ),
+                                                child: const Icon(Icons.chevron_left, size: 20, color: Colors.white),
+                                              ),
+                                            ),
+                                          ),
+                                        // Right arrow navigation for multi-document
+                                        if (orderState.files.length > 1 && !isMultiFileGrid && activeIndex < orderState.files.length - 1)
+                                          Positioned(
+                                            right: 4,
+                                            top: 145,
+                                            child: GestureDetector(
+                                              onTap: () {
+                                                HapticFeedback.selectionClick();
+                                                final nextIndex = activeIndex + 1;
+                                                ref.read(orderProvider.notifier).setActiveFileIndex(nextIndex);
+                                                if (_pageController.hasClients) {
+                                                  _pageController.nextPage(
+                                                    duration: const Duration(milliseconds: 250),
+                                                    curve: Curves.easeInOut,
+                                                  );
+                                                }
+                                              },
+                                              child: Container(
+                                                width: 30,
+                                                height: 30,
+                                                decoration: BoxDecoration(
+                                                  color: const Color(0xFF0F172A).withValues(alpha: 0.75),
+                                                  shape: BoxShape.circle,
+                                                  boxShadow: [
+                                                    BoxShadow(
+                                                      color: Colors.black.withValues(alpha: 0.30),
+                                                      blurRadius: 4,
+                                                    ),
+                                                  ],
+                                                ),
+                                                child: const Icon(Icons.chevron_right, size: 20, color: Colors.white),
+                                              ),
+                                            ),
+                                          ),
                                         // PDF Switcher Dropdown top-left
                                         if (orderState.files.isNotEmpty)
                                           Positioned(
@@ -196,11 +274,12 @@ class _DocumentConfigScreenState extends ConsumerState<DocumentConfigScreen> {
                                   if (orderState.files.isNotEmpty)
                                     Builder(
                                       builder: (context) {
-                                        final safeIndex = orderState.activeFileIndex.clamp(0, orderState.files.length - 1);
+                                        final safeIndex = activeIndex;
                                         final safeSheet = _currentSheetIndex.clamp(0, (totalPreviewSheets - 1).clamp(0, 9999));
+                                        final currentDoc = orderState.files[safeIndex];
                                         final text = isMultiFileGrid
                                             ? 'Combining ${orderState.files.length} photos on grid • Sheet ${safeSheet + 1} of $totalPreviewSheets'
-                                            : '${orderState.files[safeIndex].file.name} • ${orderState.files[safeIndex].pages} pages';
+                                            : 'Doc ${safeIndex + 1} of ${orderState.files.length}: ${currentDoc.file.name} • ${currentDoc.pages} pages • ${currentDoc.pagesPerPaper}-up layout';
                                         return Text(
                                           text,
                                           style: TextStyle(
@@ -474,6 +553,135 @@ class _DocumentConfigScreenState extends ConsumerState<DocumentConfigScreen> {
                                 ),
                               ),
                               const SizedBox(height: 16),
+
+                              // Back-to-Back (Duplex) Merge Card (when 2+ files uploaded)
+                              Container(
+                                padding: const EdgeInsets.all(16),
+                                decoration: BoxDecoration(
+                                  color: isDark
+                                      ? const Color(0xFF121929).withValues(alpha: 0.90)
+                                      : Colors.white.withValues(alpha: 0.88),
+                                  borderRadius: BorderRadius.circular(20),
+                                  border: Border.all(
+                                    color: orderState.mergeBackToBack
+                                        ? const Color(0xFF6366F1).withValues(alpha: 0.6)
+                                        : (isDark ? const Color(0xFF334155).withValues(alpha: 0.50) : Colors.white.withValues(alpha: 0.75)),
+                                    width: 1.0,
+                                  ),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: isDark
+                                          ? Colors.black.withValues(alpha: 0.25)
+                                          : const Color(0xFF4338CA).withValues(alpha: 0.05),
+                                      blurRadius: 16,
+                                      offset: const Offset(0, 5),
+                                    ),
+                                  ],
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      children: [
+                                        Container(
+                                          width: 40,
+                                          height: 40,
+                                          decoration: BoxDecoration(
+                                            color: orderState.mergeBackToBack
+                                                ? (isDark ? const Color(0xFF312E81) : const Color(0xFFEEF2FF))
+                                                : (isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9)),
+                                            borderRadius: BorderRadius.circular(12),
+                                          ),
+                                          child: Icon(
+                                            Icons.flip_to_back_rounded,
+                                            size: 22,
+                                            color: orderState.mergeBackToBack
+                                                ? const Color(0xFF6366F1)
+                                                : (isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B)),
+                                          ),
+                                        ),
+                                        const SizedBox(width: 14),
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            children: [
+                                              Row(
+                                                children: [
+                                                  Text(
+                                                    'Print Back-to-Back (Duplex)',
+                                                    style: TextStyle(
+                                                      color: isDark ? Colors.white : const Color(0xFF0F172A),
+                                                      fontSize: 14,
+                                                      fontWeight: FontWeight.w600,
+                                                    ),
+                                                  ),
+                                                  const SizedBox(width: 6),
+                                                  Container(
+                                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                                    decoration: BoxDecoration(
+                                                      color: const Color(0xFF6366F1).withValues(alpha: 0.15),
+                                                      borderRadius: BorderRadius.circular(6),
+                                                    ),
+                                                    child: const Text(
+                                                      'Smart Merge',
+                                                      style: TextStyle(
+                                                        color: Color(0xFF6366F1),
+                                                        fontSize: 10,
+                                                        fontWeight: FontWeight.bold,
+                                                      ),
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                              const SizedBox(height: 2),
+                                              Text(
+                                                'Print separate files on front & back of sheets (e.g. 2 single-page PDFs on 1 sheet)',
+                                                style: TextStyle(
+                                                  color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+                                                  fontSize: 12,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                        Switch.adaptive(
+                                          value: orderState.mergeBackToBack,
+                                          activeTrackColor: const Color(0xFF6366F1),
+                                          onChanged: (val) {
+                                            ref.read(orderProvider.notifier).setMergeBackToBack(val);
+                                          },
+                                        ),
+                                      ],
+                                    ),
+                                    if (orderState.mergeBackToBack) ...[
+                                      const SizedBox(height: 12),
+                                      const Divider(height: 1, color: Colors.white12),
+                                      const SizedBox(height: 10),
+                                      Row(
+                                        children: [
+                                          const Icon(
+                                            Icons.check_circle_rounded,
+                                            size: 15,
+                                            color: Color(0xFF10B981),
+                                          ),
+                                          const SizedBox(width: 6),
+                                          Expanded(
+                                            child: Text(
+                                              '${orderState.files.length} documents will automatically print double-sided on ${orderState.totalSheets} sheet(s)',
+                                              style: TextStyle(
+                                                fontSize: 12,
+                                                fontWeight: FontWeight.w500,
+                                                color: isDark ? const Color(0xFFCBD5E1) : const Color(0xFF334155),
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ],
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(height: 16),
                             ],
 
                             // Pages per Sheet Section (1, 2, 4, 6, 9, 16)
@@ -482,26 +690,125 @@ class _DocumentConfigScreenState extends ConsumerState<DocumentConfigScreen> {
                               child: Row(
                                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                 children: [
+                                  Row(
+                                    children: [
+                                      Text(
+                                        orderState.files.length > 1
+                                            ? 'Pages per sheet (Doc ${activeIndex + 1})'
+                                            : 'Pages per sheet',
+                                        style: TextStyle(
+                                          color: isDark ? const Color(0xFFF1F5F9) : const Color(0xFF0F172A),
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.w500,
+                                        ),
+                                      ),
+                                      if (orderState.files.length > 1 && !orderState.applyToAllFiles) ...[
+                                        const SizedBox(width: 8),
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                                          decoration: BoxDecoration(
+                                            color: const Color(0xFF0284C7).withValues(alpha: 0.15),
+                                            borderRadius: BorderRadius.circular(6),
+                                          ),
+                                          child: const Text(
+                                            'Per-Doc',
+                                            style: TextStyle(
+                                              color: Color(0xFF0284C7),
+                                              fontSize: 10,
+                                              fontWeight: FontWeight.w600,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ],
+                                  ),
                                   Text(
-                                    'Pages per sheet',
-                                    style: TextStyle(
-                                      color: isDark ? const Color(0xFFF1F5F9) : const Color(0xFF0F172A),
-                                      fontSize: 14,
-                                      fontWeight: FontWeight.w500,
+                                    '$activePagesPerPaper-up layout',
+                                    style: const TextStyle(
+                                      color: Color(0xFF0284C7),
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w600,
                                     ),
                                   ),
-                                  if (orderState.pagesPerPaper > 1)
-                                    Text(
-                                      '${orderState.pagesPerPaper}-up layout',
-                                      style: const TextStyle(
-                                        color: Color(0xFF0284C7),
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
                                 ],
                               ),
                             ),
+                            if (orderState.files.length > 1 && !isMultiFileGrid) ...[
+                              Container(
+                                margin: const EdgeInsets.only(bottom: 10),
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                                decoration: BoxDecoration(
+                                  color: isDark ? const Color(0xFF0F172A).withValues(alpha: 0.50) : const Color(0xFFF8FAFC),
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(
+                                    color: isDark ? const Color(0xFF334155).withValues(alpha: 0.40) : const Color(0xFFE2E8F0),
+                                  ),
+                                ),
+                                child: Row(
+                                  children: [
+                                    Text(
+                                      'Document:',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w500,
+                                        color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: SingleChildScrollView(
+                                        scrollDirection: Axis.horizontal,
+                                        physics: const BouncingScrollPhysics(),
+                                        child: Row(
+                                          children: List.generate(orderState.files.length, (i) {
+                                            final isSelected = i == activeIndex;
+                                            final f = orderState.files[i];
+                                            return GestureDetector(
+                                              onTap: () {
+                                                HapticFeedback.selectionClick();
+                                                ref.read(orderProvider.notifier).setActiveFileIndex(i);
+                                                if (_pageController.hasClients) {
+                                                  _pageController.animateToPage(
+                                                    i,
+                                                    duration: const Duration(milliseconds: 280),
+                                                    curve: Curves.easeInOut,
+                                                  );
+                                                }
+                                              },
+                                              child: Container(
+                                                margin: const EdgeInsets.only(right: 6),
+                                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                                decoration: BoxDecoration(
+                                                  color: isSelected
+                                                      ? const Color(0xFF0284C7)
+                                                      : (isDark ? const Color(0xFF1E293B) : Colors.white),
+                                                  borderRadius: BorderRadius.circular(8),
+                                                  border: Border.all(
+                                                    color: isSelected
+                                                        ? const Color(0xFF38BDF8)
+                                                        : (isDark ? const Color(0xFF334155) : const Color(0xFFCBD5E1)),
+                                                  ),
+                                                ),
+                                                child: Text(
+                                                  'Doc ${i + 1}: ${f.pagesPerPaper}-up',
+                                                  style: TextStyle(
+                                                    fontSize: 11,
+                                                    fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                                                    color: isSelected
+                                                        ? Colors.white
+                                                        : (isDark ? const Color(0xFFCBD5E1) : const Color(0xFF334155)),
+                                                  ),
+                                                ),
+                                              ),
+                                            );
+                                          }),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
                             Row(
                               children: [
                                 _buildNUpCard(
@@ -509,7 +816,7 @@ class _DocumentConfigScreenState extends ConsumerState<DocumentConfigScreen> {
                                   count: 1,
                                   label: '1 Page',
                                   subtitle: 'Standard',
-                                  isSelected: orderState.pagesPerPaper == 1,
+                                  isSelected: activePagesPerPaper == 1,
                                   isDark: isDark,
                                 ),
                                 const SizedBox(width: 8),
@@ -518,7 +825,7 @@ class _DocumentConfigScreenState extends ConsumerState<DocumentConfigScreen> {
                                   count: 2,
                                   label: '2 Pages',
                                   subtitle: '2-up',
-                                  isSelected: orderState.pagesPerPaper == 2,
+                                  isSelected: activePagesPerPaper == 2,
                                   isDark: isDark,
                                 ),
                                 const SizedBox(width: 8),
@@ -527,7 +834,7 @@ class _DocumentConfigScreenState extends ConsumerState<DocumentConfigScreen> {
                                   count: 4,
                                   label: '4 Pages',
                                   subtitle: '4-up',
-                                  isSelected: orderState.pagesPerPaper == 4,
+                                  isSelected: activePagesPerPaper == 4,
                                   isDark: isDark,
                                 ),
                               ],
@@ -540,7 +847,7 @@ class _DocumentConfigScreenState extends ConsumerState<DocumentConfigScreen> {
                                   count: 6,
                                   label: '6 Pages',
                                   subtitle: '6-up',
-                                  isSelected: orderState.pagesPerPaper == 6,
+                                  isSelected: activePagesPerPaper == 6,
                                   isDark: isDark,
                                 ),
                                 const SizedBox(width: 8),
@@ -549,7 +856,7 @@ class _DocumentConfigScreenState extends ConsumerState<DocumentConfigScreen> {
                                   count: 9,
                                   label: '9 Pages',
                                   subtitle: '3×3 grid',
-                                  isSelected: orderState.pagesPerPaper == 9,
+                                  isSelected: activePagesPerPaper == 9,
                                   isDark: isDark,
                                 ),
                                 const SizedBox(width: 8),
@@ -558,12 +865,12 @@ class _DocumentConfigScreenState extends ConsumerState<DocumentConfigScreen> {
                                   count: 16,
                                   label: '16 Pages',
                                   subtitle: '4×4 grid',
-                                  isSelected: orderState.pagesPerPaper == 16,
+                                  isSelected: activePagesPerPaper == 16,
                                   isDark: isDark,
                                 ),
                               ],
                             ),
-                            if (isImageFile && orderState.pagesPerPaper > 1) ...[
+                            if (isImageFile && activePagesPerPaper > 1) ...[
                               const SizedBox(height: 10),
                               Container(
                                 padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
@@ -597,7 +904,7 @@ class _DocumentConfigScreenState extends ConsumerState<DocumentConfigScreen> {
                                             ),
                                           ),
                                           Text(
-                                            'Tile this photo across all ${orderState.pagesPerPaper} layout cells',
+                                            'Tile this photo across all $activePagesPerPaper layout cells',
                                             style: TextStyle(
                                               color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
                                               fontSize: 11,
@@ -607,7 +914,7 @@ class _DocumentConfigScreenState extends ConsumerState<DocumentConfigScreen> {
                                       ),
                                     ),
                                     Switch.adaptive(
-                                      value: orderState.repeatImageOnGrid,
+                                      value: activeFile.repeatImageOnGrid,
                                       activeTrackColor: const Color(0xFF0284C7),
                                       onChanged: (val) {
                                         ref.read(orderProvider.notifier).setRepeatImageOnGrid(val);
@@ -636,14 +943,14 @@ class _DocumentConfigScreenState extends ConsumerState<DocumentConfigScreen> {
                                 Expanded(
                                   child: _buildSelectableCard(
                                     isDark: isDark,
-                                    isSelected: orderState.sides == 'single',
+                                    isSelected: activeSides == 'single',
                                     onTap: () => ref.read(orderProvider.notifier).setSides('single'),
                                     icon: Container(
                                       width: 18,
                                       height: 22,
                                       decoration: BoxDecoration(
                                         border: Border.all(
-                                          color: orderState.sides == 'single'
+                                          color: activeSides == 'single'
                                               ? const Color(0xFF0891B2)
                                               : (isDark ? const Color(0xFFCBD5E1) : const Color(0xFF475569)),
                                           width: 1.5,
@@ -654,7 +961,7 @@ class _DocumentConfigScreenState extends ConsumerState<DocumentConfigScreen> {
                                       child: Text(
                                         '1',
                                         style: TextStyle(
-                                          color: orderState.sides == 'single'
+                                          color: activeSides == 'single'
                                               ? const Color(0xFF0891B2)
                                               : (isDark ? const Color(0xFFCBD5E1) : const Color(0xFF475569)),
                                           fontSize: 11,
@@ -670,7 +977,7 @@ class _DocumentConfigScreenState extends ConsumerState<DocumentConfigScreen> {
                                 Expanded(
                                   child: _buildSelectableCard(
                                     isDark: isDark,
-                                    isSelected: orderState.sides == 'double',
+                                    isSelected: activeSides == 'double',
                                     onTap: () => ref.read(orderProvider.notifier).setSides('double'),
                                     icon: SizedBox(
                                       width: 22,
@@ -697,7 +1004,7 @@ class _DocumentConfigScreenState extends ConsumerState<DocumentConfigScreen> {
                                               decoration: BoxDecoration(
                                                 color: isDark ? const Color(0xFF1E293B) : Colors.white,
                                                 border: Border.all(
-                                                  color: orderState.sides == 'double'
+                                                  color: activeSides == 'double'
                                                       ? const Color(0xFF0891B2)
                                                       : (isDark ? const Color(0xFFCBD5E1) : const Color(0xFF475569)),
                                                   width: 1.5,
@@ -708,7 +1015,7 @@ class _DocumentConfigScreenState extends ConsumerState<DocumentConfigScreen> {
                                               child: Text(
                                                 '2',
                                                 style: TextStyle(
-                                                  color: orderState.sides == 'double'
+                                                  color: activeSides == 'double'
                                                       ? const Color(0xFF0891B2)
                                                       : (isDark ? const Color(0xFFCBD5E1) : const Color(0xFF475569)),
                                                   fontSize: 10,
@@ -745,7 +1052,7 @@ class _DocumentConfigScreenState extends ConsumerState<DocumentConfigScreen> {
                                 Expanded(
                                   child: _buildSelectableCard(
                                     isDark: isDark,
-                                    isSelected: orderState.colorMode == 'Color',
+                                    isSelected: activeColorMode == 'Color',
                                     onTap: () => ref.read(orderProvider.notifier).setColorMode('Color'),
                                     icon: SizedBox(
                                       width: 24,
@@ -774,12 +1081,12 @@ class _DocumentConfigScreenState extends ConsumerState<DocumentConfigScreen> {
                                 Expanded(
                                   child: _buildSelectableCard(
                                     isDark: isDark,
-                                    isSelected: orderState.colorMode == 'B&W',
+                                    isSelected: activeColorMode == 'B&W',
                                     onTap: () => ref.read(orderProvider.notifier).setColorMode('B&W'),
                                     icon: Icon(
                                       Icons.tonality,
                                       size: 24,
-                                      color: orderState.colorMode == 'B&W'
+                                      color: activeColorMode == 'B&W'
                                           ? const Color(0xFF0891B2)
                                           : (isDark ? const Color(0xFFCBD5E1) : const Color(0xFF0F172A)),
                                     ),
@@ -1383,9 +1690,7 @@ class _DocumentConfigScreenState extends ConsumerState<DocumentConfigScreen> {
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           Text(
-                            orderState.sides == 'double'
-                                ? 'Total ${orderState.totalSheets} ${orderState.totalSheets == 1 ? 'sheet' : 'sheets'} (${orderState.totalPagesCount} pages)'
-                                : 'Total ${orderState.totalSheets} ${orderState.totalSheets == 1 ? 'sheet' : 'sheets'}',
+                            'Total ${orderState.totalSheets} ${orderState.totalSheets == 1 ? 'sheet' : 'sheets'} (${orderState.totalPagesCount} ${orderState.totalPagesCount == 1 ? 'page' : 'pages'})',
                             style: TextStyle(
                               color: isDark ? Colors.white : const Color(0xFF0F172A),
                               fontSize: 15,
@@ -1393,13 +1698,28 @@ class _DocumentConfigScreenState extends ConsumerState<DocumentConfigScreen> {
                             ),
                           ),
                           const SizedBox(height: 2),
-                          Text(
-                            '₹${orderState.amountTotal.toStringAsFixed(2)}',
-                            style: const TextStyle(
-                              color: Color(0xFF0284C7),
-                              fontSize: 14,
-                              fontWeight: FontWeight.bold,
-                            ),
+                          Row(
+                            children: [
+                              Text(
+                                '₹${orderState.amountTotal.toStringAsFixed(2)}',
+                                style: const TextStyle(
+                                  color: Color(0xFF0284C7),
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                              Text(
+                                (activeSides == 'double' || orderState.sides == 'double' || orderState.files.any((f) => f.sides == 'double'))
+                                    ? '• Duplex (${orderState.totalPrintedSides} sides)'
+                                    : '• ${orderState.totalPrintedSides} ${orderState.totalPrintedSides == 1 ? 'side' : 'sides'}',
+                                style: TextStyle(
+                                  color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ],
                           ),
                         ],
                       ),
@@ -1775,6 +2095,112 @@ class _DocumentConfigScreenState extends ConsumerState<DocumentConfigScreen> {
     );
   }
 
+  Widget _buildDocumentTabsSelector(
+    BuildContext context,
+    WidgetRef ref,
+    OrderState orderState,
+    int activeIndex,
+    bool isDark,
+  ) {
+    return Container(
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF1E293B).withValues(alpha: 0.70) : const Color(0xFFF1F5F9),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: isDark ? const Color(0xFF334155).withValues(alpha: 0.50) : const Color(0xFFE2E8F0),
+          width: 1.0,
+        ),
+      ),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        physics: const BouncingScrollPhysics(),
+        child: Row(
+          children: List.generate(orderState.files.length, (i) {
+            final isSelected = i == activeIndex;
+            final fileEntry = orderState.files[i];
+            return GestureDetector(
+              onTap: () {
+                HapticFeedback.selectionClick();
+                ref.read(orderProvider.notifier).setActiveFileIndex(i);
+                if (_pageController.hasClients) {
+                  _pageController.animateToPage(
+                    i,
+                    duration: const Duration(milliseconds: 280),
+                    curve: Curves.easeInOut,
+                  );
+                }
+              },
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                margin: const EdgeInsets.only(right: 6),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                decoration: BoxDecoration(
+                  color: isSelected
+                      ? (isDark ? const Color(0xFF0284C7) : Colors.white)
+                      : Colors.transparent,
+                  borderRadius: BorderRadius.circular(12),
+                  boxShadow: isSelected
+                      ? [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: isDark ? 0.25 : 0.08),
+                            blurRadius: 6,
+                            offset: const Offset(0, 2),
+                          ),
+                        ]
+                      : null,
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      Icons.description_rounded,
+                      size: 15,
+                      color: isSelected
+                          ? (isDark ? Colors.white : const Color(0xFF0284C7))
+                          : (isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B)),
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      'Doc ${i + 1}',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                        color: isSelected
+                            ? (isDark ? Colors.white : const Color(0xFF0F172A))
+                            : (isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B)),
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: isSelected
+                            ? (isDark ? Colors.white.withValues(alpha: 0.2) : const Color(0xFFE0F2FE))
+                            : (isDark ? const Color(0xFF0F172A) : const Color(0xFFE2E8F0)),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Text(
+                        '${fileEntry.pagesPerPaper}-up',
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w700,
+                          color: isSelected
+                              ? (isDark ? Colors.white : const Color(0xFF0284C7))
+                              : (isDark ? const Color(0xFF38BDF8) : const Color(0xFF0284C7)),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          }),
+        ),
+      ),
+    );
+  }
+
   Widget _buildFileDropdownSelector(BuildContext context, WidgetRef ref, OrderState orderState, bool isDark) {
     final safeIndex = orderState.activeFileIndex.clamp(0, orderState.files.isNotEmpty ? orderState.files.length - 1 : 0);
     final activeEntry = orderState.files.isNotEmpty ? orderState.files[safeIndex] : null;
@@ -1864,7 +2290,7 @@ class _DocumentConfigScreenState extends ConsumerState<DocumentConfigScreen> {
                             overflow: TextOverflow.ellipsis,
                           ),
                           Text(
-                            '${entry.pages} pages • ${entry.colorMode} • ${entry.sides == 'double' ? 'Back-to-Back' : 'Single Sided'}',
+                            '${entry.pages} pages • ${entry.pagesPerPaper}-up • ${entry.colorMode} • ${entry.sides == 'double' ? 'Back-to-Back' : 'Single Sided'}',
                             style: TextStyle(
                               fontSize: 10,
                               color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),

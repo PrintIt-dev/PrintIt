@@ -48,7 +48,7 @@ function parsePageRangeCount(range, maxPages) {
  * @param {Array} files - array of file entries with print options
  * @returns {Promise<{ subtotal: number, minRequiredAmount: number }>}
  */
-async function calculatePrintSubtotal(client, shopId, files) {
+async function calculatePrintSubtotal(client, shopId, files, options = {}) {
 
     if (!shopId) {
         throw new Error('shop_id is required to calculate pricing');
@@ -114,12 +114,12 @@ async function calculatePrintSubtotal(client, shopId, files) {
             const entry = (rawFile && rawFile.file_info && typeof rawFile.file_info === 'object') ? rawFile.file_info : (rawFile || {});
             const printOptions = entry.print_options || rawFile.print_options || {};
             const rawRange = printOptions.page_range || entry.page_range || (typeof printOptions.pages === 'string' && (printOptions.pages.includes('-') || printOptions.pages.includes(',')) ? printOptions.pages : null);
-            const p = parseInt(entry.pages || entry.page_count || 1, 10);
+            const p = parseInt(entry.page_count || entry.pages || 1, 10);
             const count = rawRange ? parsePageRangeCount(rawRange, p) : (p > 0 ? p : 1);
             totalInputPages += count;
 
 
-            const ppp = parseInt(entry.pagesPerPaper || printOptions.pages_per_paper || fileList.length, 10);
+            const ppp = parseInt(entry.pagesPerPaper || entry.pages_per_paper || printOptions.pages_per_paper || printOptions.pagesPerPaper || options.pages_per_paper || options.pagesPerPaper || fileList.length, 10);
             if (ppp > maxPagesPerPaper) maxPagesPerPaper = ppp;
 
             const rawColor = (entry.colorMode || entry.color_mode || printOptions.color || 'bw').toString().toLowerCase();
@@ -164,6 +164,103 @@ async function calculatePrintSubtotal(client, shopId, files) {
         } else {
             sheetCost = printedSides * baseSinglePrice;
         }
+
+        const totalCost = (sheetCost * copies) + bindingPrice;
+        const calculatedSubtotal = parseFloat(totalCost.toFixed(2));
+        return {
+            subtotal: calculatedSubtotal,
+            minRequiredAmount: calculatedSubtotal
+        };
+    }
+
+    // Check if multi-file back-to-back duplex merge (Smart Duplex) is active
+    const isBackToBack = !isMultiGrid && fileList.length > 1 && (
+        options.merge_back_to_back === true ||
+        options.mergeBackToBack === true ||
+        fileList.some(rawFile => {
+            const entry = (rawFile && rawFile.file_info && typeof rawFile.file_info === 'object') ? rawFile.file_info : (rawFile || {});
+            const opts = entry.print_options || rawFile.print_options || {};
+            return opts.merge_back_to_back === true || opts.mergeBackToBack === true;
+        })
+    );
+
+    if (isBackToBack) {
+        // Collate all files sequentially on front and back of sheets
+        let totalInputPages = 0;
+        let hasColor = false;
+        let targetSize = 'A4';
+        let copies = 1;
+        let binding = 'none';
+        let maxPagesPerPaper = 1;
+
+        for (const rawFile of fileList) {
+            const entry = (rawFile && rawFile.file_info && typeof rawFile.file_info === 'object') ? rawFile.file_info : (rawFile || {});
+            const printOptions = entry.print_options || rawFile.print_options || {};
+            const rawRange = printOptions.page_range || entry.page_range || (typeof printOptions.pages === 'string' && (printOptions.pages.includes('-') || printOptions.pages.includes(',')) ? printOptions.pages : null);
+            const p = parseInt(entry.page_count || entry.pages || 1, 10);
+            const count = rawRange ? parsePageRangeCount(rawRange, p) : (p > 0 ? p : 1);
+            totalInputPages += count;
+
+            const ppp = parseInt(entry.pagesPerPaper || entry.pages_per_paper || printOptions.pages_per_paper || printOptions.pagesPerPaper || options.pages_per_paper || options.pagesPerPaper || 1, 10);
+            if (ppp > maxPagesPerPaper) maxPagesPerPaper = ppp;
+
+            const rawColor = (entry.colorMode || entry.color_mode || printOptions.color || 'bw').toString().toLowerCase();
+            if (rawColor.includes('color')) hasColor = true;
+
+            const sz = (entry.paperSize || entry.paper_size || entry.size || printOptions.size || 'A4').toString().toUpperCase();
+            if (sz) targetSize = sz;
+
+            const c = parseInt(entry.copies || printOptions.copies || 1, 10);
+            if (c > copies) copies = c;
+
+            const b = (entry.binding || printOptions.binding || 'none').toString().toLowerCase();
+            if (b !== 'none') binding = b;
+        }
+
+        const targetColor = hasColor ? 'color' : 'bw';
+        let baseSinglePrice = hasColor ? defaultPriceColor : defaultPriceBw;
+        let baseDoublePrice = baseSinglePrice * 1.5;
+        let bindingPrice = 0.0;
+        if (binding.includes('spiral')) bindingPrice = 25.0;
+        else if (binding.includes('hardcover')) bindingPrice = 60.0;
+        else if (binding.includes('staple')) bindingPrice = 5.0;
+
+        for (const rule of rules) {
+            const ruleColor = (rule.color || '').toLowerCase();
+            const ruleSize = (rule.size || '').toUpperCase();
+            const ruleSides = (rule.sides || '').toLowerCase();
+            if (ruleColor === targetColor && ruleSize === targetSize) {
+                if (ruleSides === 'single' && rule.price_per_page != null) baseSinglePrice = parseFloat(rule.price_per_page);
+                else if (ruleSides === 'double' && rule.price_per_page != null) baseDoublePrice = parseFloat(rule.price_per_page);
+                if (binding.includes('spiral') && rule.binding_spiral_price != null) bindingPrice = parseFloat(rule.binding_spiral_price);
+                else if (binding.includes('staple') && rule.binding_staple_price != null) bindingPrice = parseFloat(rule.binding_staple_price);
+            }
+        }
+
+        const hasSizeRule = rules.some(r =>
+            (r.color || '').toLowerCase() === targetColor &&
+            (r.size || '').toUpperCase() === targetSize
+        );
+        if (!hasSizeRule && targetSize !== 'A4') {
+            for (const rule of rules) {
+                const ruleColor = (rule.color || '').toLowerCase();
+                const ruleSize = (rule.size || '').toUpperCase();
+                const ruleSides = (rule.sides || '').toLowerCase();
+                if (ruleColor === targetColor && ruleSize === 'A4') {
+                    if (ruleSides === 'single' && rule.price_per_page != null) baseSinglePrice = parseFloat(rule.price_per_page);
+                    else if (ruleSides === 'double' && rule.price_per_page != null) baseDoublePrice = parseFloat(rule.price_per_page);
+                    if (binding.includes('spiral') && rule.binding_spiral_price != null) bindingPrice = parseFloat(rule.binding_spiral_price);
+                    else if (binding.includes('staple') && rule.binding_staple_price != null) bindingPrice = parseFloat(rule.binding_staple_price);
+                }
+            }
+        }
+
+        const effectivePages = totalInputPages < 1 ? 1 : totalInputPages;
+        const validPpp = maxPagesPerPaper > 0 ? maxPagesPerPaper : 1;
+        const printedSides = Math.ceil(effectivePages / validPpp);
+        const fullDoubleSheets = Math.floor(printedSides / 2);
+        const remainingSingleSides = printedSides % 2;
+        const sheetCost = (fullDoubleSheets * baseDoublePrice) + (remainingSingleSides * baseSinglePrice);
 
         const totalCost = (sheetCost * copies) + bindingPrice;
         const calculatedSubtotal = parseFloat(totalCost.toFixed(2));
@@ -222,11 +319,11 @@ async function calculatePrintSubtotal(client, shopId, files) {
         }
 
         const rawRange = printOptions.page_range || entry.page_range || (typeof printOptions.pages === 'string' && (printOptions.pages.includes('-') || printOptions.pages.includes(',')) ? printOptions.pages : null);
-        const pages = parseInt(entry.pages || entry.page_count || 1, 10);
+        const pages = parseInt(entry.page_count || entry.pages || 1, 10);
         const validPages = rawRange ? parsePageRangeCount(rawRange, pages) : (pages > 0 ? pages : 1);
 
 
-        const pagesPerPaper = parseInt(entry.pagesPerPaper || printOptions.pages_per_paper || 1, 10);
+        const pagesPerPaper = parseInt(entry.pagesPerPaper || entry.pages_per_paper || printOptions.pages_per_paper || printOptions.pagesPerPaper || options.pages_per_paper || options.pagesPerPaper || 1, 10);
         const validPagesPerPaper = pagesPerPaper > 0 ? pagesPerPaper : 1;
 
         const copies = parseInt(entry.copies || printOptions.copies || 1, 10);

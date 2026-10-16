@@ -2,6 +2,39 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:file_picker/file_picker.dart';
 import '../../core/api/api_client.dart';
 
+/// Helper to count selective pages from range string e.g. "1-5, 8, 11-14"
+int parsePageRangeCount(String range, int maxPages) {
+  if (range.trim().isEmpty) return maxPages > 0 ? maxPages : 1;
+  final Set<int> pageSet = {};
+  final parts = range.split(RegExp(r'[,;\s]+'));
+  for (var part in parts) {
+    part = part.trim();
+    if (part.isEmpty) continue;
+    if (part.contains('-')) {
+      final dashParts = part.split('-');
+      if (dashParts.length == 2) {
+        final start = int.tryParse(dashParts[0].trim());
+        final end = int.tryParse(dashParts[1].trim());
+        if (start != null && end != null && start <= end) {
+          for (int i = start; i <= end; i++) {
+            if (maxPages <= 0 || (i >= 1 && i <= maxPages)) {
+              pageSet.add(i);
+            }
+          }
+        }
+      }
+    } else {
+      final single = int.tryParse(part);
+      if (single != null) {
+        if (maxPages <= 0 || (single >= 1 && single <= maxPages)) {
+          pageSet.add(single);
+        }
+      }
+    }
+  }
+  return pageSet.isNotEmpty ? pageSet.length : (maxPages > 0 ? maxPages : 1);
+}
+
 /// Represents a single uploaded file with its own print configuration.
 class FileEntry {
   final PlatformFile file;
@@ -16,6 +49,7 @@ class FileEntry {
   final String sides;
   final bool repeatImageOnGrid;
   final bool multiFileGrid;
+  final bool mergeBackToBack;
   final String pageRange;
 
   FileEntry({
@@ -31,6 +65,7 @@ class FileEntry {
     this.sides = 'single',
     this.repeatImageOnGrid = true,
     this.multiFileGrid = false,
+    this.mergeBackToBack = false,
     this.pageRange = '',
   });
 
@@ -47,6 +82,7 @@ class FileEntry {
     String? sides,
     bool? repeatImageOnGrid,
     bool? multiFileGrid,
+    bool? mergeBackToBack,
     String? pageRange,
   }) {
     return FileEntry(
@@ -62,6 +98,7 @@ class FileEntry {
       sides: sides ?? this.sides,
       repeatImageOnGrid: repeatImageOnGrid ?? this.repeatImageOnGrid,
       multiFileGrid: multiFileGrid ?? this.multiFileGrid,
+      mergeBackToBack: mergeBackToBack ?? this.mergeBackToBack,
       pageRange: pageRange ?? this.pageRange,
     );
   }
@@ -84,6 +121,7 @@ class OrderState {
   final String sides;
   final bool repeatImageOnGrid;
   final bool multiFileGrid;
+  final bool mergeBackToBack;
   final bool applyToAllFiles;
   final String pageRange;
   final String pickupType; // 'express' or 'scheduled'
@@ -115,6 +153,7 @@ class OrderState {
     this.sides = 'single',
     this.repeatImageOnGrid = true,
     this.multiFileGrid = false,
+    this.mergeBackToBack = false,
     this.applyToAllFiles = false,
     this.pageRange = '',
     this.pickupType = 'express',
@@ -136,12 +175,27 @@ class OrderState {
       ? files[activeFileIndex] 
       : null;
 
-  /// Total physical paper sheets across all configured files (taking duplex/back-to-back into account)
+  /// Total physical paper sheets across all configured files (taking duplex/back-to-back and N-up into account)
   int get totalSheets {
+    if (mergeBackToBack && files.length > 1) {
+      int sumPages = 0;
+      for (final f in files) {
+        sumPages += f.pageRange.trim().isNotEmpty
+            ? parsePageRangeCount(f.pageRange, f.pages)
+            : (f.pages > 0 ? f.pages : 1);
+      }
+      final ppp = pagesPerPaper > 0 ? pagesPerPaper : 1;
+      final printedSides = (sumPages / ppp).ceil();
+      final sheetsPerCopy = (printedSides / 2).ceil();
+      final sum = sheetsPerCopy * (copies > 0 ? copies : 1);
+      return sum > 0 ? sum : 1;
+    }
     if (multiFileGrid && files.length > 1) {
       int sumPages = 0;
       for (final f in files) {
-        sumPages += f.pages > 0 ? f.pages : 1;
+        sumPages += f.pageRange.trim().isNotEmpty
+            ? parsePageRangeCount(f.pageRange, f.pages)
+            : (f.pages > 0 ? f.pages : 1);
       }
       final ppp = pagesPerPaper > 0 ? pagesPerPaper : files.length;
       final printedSides = (sumPages / ppp).ceil();
@@ -153,7 +207,9 @@ class OrderState {
       int sum = 0;
       for (final f in files) {
         final ppp = f.pagesPerPaper > 0 ? f.pagesPerPaper : 1;
-        final p = f.pages > 0 ? f.pages : 1;
+        final p = f.pageRange.trim().isNotEmpty
+            ? parsePageRangeCount(f.pageRange, f.pages)
+            : (f.pages > 0 ? f.pages : 1);
         final printedSides = (p / ppp).ceil();
         final sheetsPerCopy = f.sides == 'double' ? (printedSides / 2).ceil() : printedSides;
         sum += sheetsPerCopy * (f.copies > 0 ? f.copies : 1);
@@ -161,27 +217,76 @@ class OrderState {
       return sum > 0 ? sum : 1;
     }
     final ppp = pagesPerPaper > 0 ? pagesPerPaper : 1;
-    final p = pages > 0 ? pages : 1;
+    final p = pageRange.trim().isNotEmpty
+        ? parsePageRangeCount(pageRange, pages)
+        : (pages > 0 ? pages : 1);
     final printedSides = (p / ppp).ceil();
     final sheetsPerCopy = sides == 'double' ? (printedSides / 2).ceil() : printedSides;
     final total = sheetsPerCopy * (copies > 0 ? copies : 1);
     return total > 0 ? total : 1;
   }
 
-  /// Total document page count across all files multiplied by copies
+  /// Total document page count across all files multiplied by copies (reflects actual document pages)
   int get totalPagesCount {
     if (files.isNotEmpty) {
       int sum = 0;
       for (final f in files) {
+        final p = f.pageRange.trim().isNotEmpty
+            ? parsePageRangeCount(f.pageRange, f.pages)
+            : (f.pages > 0 ? f.pages : 1);
+        sum += p * (f.copies > 0 ? f.copies : 1);
+      }
+      return sum > 0 ? sum : 1;
+    }
+    final p = pageRange.trim().isNotEmpty
+        ? parsePageRangeCount(pageRange, pages)
+        : (pages > 0 ? pages : 1);
+    final total = p * (copies > 0 ? copies : 1);
+    return total > 0 ? total : 1;
+  }
+
+  /// Total printed faces/sides across all files taking N-up into account
+  int get totalPrintedSides {
+    if (mergeBackToBack && files.length > 1) {
+      int sumPages = 0;
+      for (final f in files) {
+        sumPages += f.pageRange.trim().isNotEmpty
+            ? parsePageRangeCount(f.pageRange, f.pages)
+            : (f.pages > 0 ? f.pages : 1);
+      }
+      final ppp = pagesPerPaper > 0 ? pagesPerPaper : 1;
+      final printedSides = (sumPages / ppp).ceil();
+      final total = printedSides * (copies > 0 ? copies : 1);
+      return total > 0 ? total : 1;
+    }
+    if (multiFileGrid && files.length > 1) {
+      int sumPages = 0;
+      for (final f in files) {
+        sumPages += f.pageRange.trim().isNotEmpty
+            ? parsePageRangeCount(f.pageRange, f.pages)
+            : (f.pages > 0 ? f.pages : 1);
+      }
+      final ppp = pagesPerPaper > 0 ? pagesPerPaper : files.length;
+      final printedSides = (sumPages / ppp).ceil();
+      final total = printedSides * (copies > 0 ? copies : 1);
+      return total > 0 ? total : 1;
+    }
+    if (files.isNotEmpty) {
+      int sum = 0;
+      for (final f in files) {
         final ppp = f.pagesPerPaper > 0 ? f.pagesPerPaper : 1;
-        final p = f.pages > 0 ? f.pages : 1;
+        final p = f.pageRange.trim().isNotEmpty
+            ? parsePageRangeCount(f.pageRange, f.pages)
+            : (f.pages > 0 ? f.pages : 1);
         final printedSides = (p / ppp).ceil();
         sum += printedSides * (f.copies > 0 ? f.copies : 1);
       }
       return sum > 0 ? sum : 1;
     }
     final ppp = pagesPerPaper > 0 ? pagesPerPaper : 1;
-    final p = pages > 0 ? pages : 1;
+    final p = pageRange.trim().isNotEmpty
+        ? parsePageRangeCount(pageRange, pages)
+        : (pages > 0 ? pages : 1);
     final printedSides = (p / ppp).ceil();
     final total = printedSides * (copies > 0 ? copies : 1);
     return total > 0 ? total : 1;
@@ -204,6 +309,7 @@ class OrderState {
     String? sides,
     bool? repeatImageOnGrid,
     bool? multiFileGrid,
+    bool? mergeBackToBack,
     bool? applyToAllFiles,
     String? pageRange,
     String? pickupType,
@@ -235,6 +341,7 @@ class OrderState {
       sides: sides ?? this.sides,
       repeatImageOnGrid: repeatImageOnGrid ?? this.repeatImageOnGrid,
       multiFileGrid: multiFileGrid ?? this.multiFileGrid,
+      mergeBackToBack: mergeBackToBack ?? this.mergeBackToBack,
       applyToAllFiles: applyToAllFiles ?? this.applyToAllFiles,
       pageRange: pageRange ?? this.pageRange,
       pickupType: pickupType ?? this.pickupType,
@@ -368,6 +475,7 @@ class OrderNotifier extends Notifier<OrderState> {
         orientation: entry.orientation,
         sides: entry.sides,
         repeatImageOnGrid: entry.repeatImageOnGrid,
+        pageRange: entry.pageRange,
       );
       _calculateTotal();
     }
@@ -502,6 +610,20 @@ class OrderNotifier extends Notifier<OrderState> {
     _calculateTotal();
   }
 
+  /// Explicitly sets pagesPerPaper for a specific document by fileIndex
+  void setFilePagesPerPaper(int index, int count) {
+    if (index >= 0 && index < state.files.length) {
+      final updated = state.files[index].copyWith(pagesPerPaper: count);
+      final newFiles = List<FileEntry>.from(state.files);
+      newFiles[index] = updated;
+      state = state.copyWith(
+        files: newFiles,
+        pagesPerPaper: index == state.activeFileIndex ? count : state.pagesPerPaper,
+      );
+      _calculateTotal();
+    }
+  }
+
   void setOrientation(String val) {
     state = state.copyWith(orientation: val);
     if (state.files.isNotEmpty) {
@@ -584,41 +706,33 @@ class OrderNotifier extends Notifier<OrderState> {
   }
 
   void setMultiFileGrid(bool val) {
-    state = state.copyWith(multiFileGrid: val);
+    state = state.copyWith(
+      multiFileGrid: val,
+      mergeBackToBack: val ? false : state.mergeBackToBack,
+    );
+    _calculateTotal();
+  }
+
+  void setMergeBackToBack(bool val) {
+    state = state.copyWith(
+      mergeBackToBack: val,
+      sides: val ? 'double' : state.sides,
+      multiFileGrid: val ? false : state.multiFileGrid,
+    );
+    if (state.files.isNotEmpty) {
+      state = state.copyWith(
+        files: state.files.map((f) => f.copyWith(
+          sides: val ? 'double' : f.sides,
+          mergeBackToBack: val,
+          multiFileGrid: val ? false : f.multiFileGrid,
+        )).toList(),
+      );
+    }
     _calculateTotal();
   }
 
   static int parsePageRangeCount(String range, int maxPages) {
-
-    if (range.trim().isEmpty) return maxPages > 0 ? maxPages : 1;
-    final Set<int> pageSet = {};
-    final parts = range.split(RegExp(r'[,;\s]+'));
-    for (var part in parts) {
-      part = part.trim();
-      if (part.isEmpty) continue;
-      if (part.contains('-')) {
-        final dashParts = part.split('-');
-        if (dashParts.length == 2) {
-          final start = int.tryParse(dashParts[0].trim());
-          final end = int.tryParse(dashParts[1].trim());
-          if (start != null && end != null && start <= end) {
-            for (int i = start; i <= end; i++) {
-              if (maxPages <= 0 || (i >= 1 && i <= maxPages)) {
-                pageSet.add(i);
-              }
-            }
-          }
-        }
-      } else {
-        final single = int.tryParse(part);
-        if (single != null) {
-          if (maxPages <= 0 || (single >= 1 && single <= maxPages)) {
-            pageSet.add(single);
-          }
-        }
-      }
-    }
-    return pageSet.isNotEmpty ? pageSet.length : (maxPages > 0 ? maxPages : 1);
+    return parsePageRangeCount(range, maxPages);
   }
 
   void setPageRange(String range) {
@@ -636,7 +750,10 @@ class OrderNotifier extends Notifier<OrderState> {
   void _calculateTotal() {
     double totalSubtotal = 0.0;
 
-    if (state.multiFileGrid && state.files.length > 1) {
+    if (state.mergeBackToBack && state.files.length > 1) {
+      // Back-to-back duplex collation: files combined sequentially on front/back of sheets
+      totalSubtotal = _calculateMergeBackToBackSubtotal();
+    } else if (state.multiFileGrid && state.files.length > 1) {
       // Multi-file grid collation: all files combined onto target sheets
       totalSubtotal = _calculateMultiFileGridSubtotal();
     } else if (state.files.isNotEmpty) {
@@ -660,6 +777,75 @@ class OrderNotifier extends Notifier<OrderState> {
       razorpayFee: razorpayFee,
       amountTotal: double.parse(totalSubtotal.toStringAsFixed(2)),
     );
+  }
+
+  /// Calculate subtotal when back-to-back duplex merge is enabled for multiple files.
+  /// Merges all uploaded files sequentially onto double-sided physical sheets.
+  double _calculateMergeBackToBackSubtotal() {
+    bool hasColor = state.files.any((f) => f.colorMode == 'Color') || state.colorMode == 'Color';
+    double baseSinglePrice = hasColor ? state.priceColor : state.priceBw;
+    double baseDoublePrice = baseSinglePrice * 1.5;
+    double bindingPrice = 0.0;
+
+    if (state.binding == 'spiral') bindingPrice = 25.0;
+    if (state.binding == 'hardcover') bindingPrice = 60.0;
+
+    String targetColor = hasColor ? 'color' : 'bw';
+    String targetSize = state.paperSize.toUpperCase();
+
+    for (var rule in state.pricingRules) {
+      final rColor = rule['color']?.toString().toLowerCase();
+      final rSize = rule['size']?.toString().toUpperCase() ?? 'A4';
+      if (rColor == targetColor && rSize == targetSize) {
+        if (rule['sides'] == 'single') {
+          baseSinglePrice = double.tryParse(rule['price_per_page']?.toString() ?? '') ?? baseSinglePrice;
+        } else if (rule['sides'] == 'double') {
+          baseDoublePrice = double.tryParse(rule['price_per_page']?.toString() ?? '') ?? baseDoublePrice;
+        }
+        if (state.binding == 'spiral' || state.binding == 'hardcover') {
+          bindingPrice = double.tryParse(rule['binding_spiral_price']?.toString() ?? '') ?? bindingPrice;
+        }
+      }
+    }
+    bool hasGridSizeRule = state.pricingRules.any((r) =>
+      r['color']?.toString().toLowerCase() == targetColor &&
+      (r['size']?.toString().toUpperCase() ?? 'A4') == targetSize
+    );
+    if (!hasGridSizeRule && targetSize != 'A4') {
+      for (var rule in state.pricingRules) {
+        final rColor = rule['color']?.toString().toLowerCase();
+        final rSize = rule['size']?.toString().toUpperCase() ?? 'A4';
+        if (rColor == targetColor && rSize == 'A4') {
+          if (rule['sides'] == 'single') {
+            baseSinglePrice = double.tryParse(rule['price_per_page']?.toString() ?? '') ?? baseSinglePrice;
+          } else if (rule['sides'] == 'double') {
+            baseDoublePrice = double.tryParse(rule['price_per_page']?.toString() ?? '') ?? baseDoublePrice;
+          }
+          if (state.binding == 'spiral' || state.binding == 'hardcover') {
+            bindingPrice = double.tryParse(rule['binding_spiral_price']?.toString() ?? '') ?? bindingPrice;
+          }
+        }
+      }
+    }
+
+    int totalPages = 0;
+    for (final f in state.files) {
+      totalPages += parsePageRangeCount(f.pageRange, f.pages);
+    }
+    if (totalPages < 1) totalPages = 1;
+
+    int ppp = state.pagesPerPaper > 0 ? state.pagesPerPaper : 1;
+    int printedSides = (totalPages / ppp).ceil();
+    if (printedSides < 1) printedSides = 1;
+
+    int fullDoubleSheets = printedSides ~/ 2;
+    int remainingSingleSides = printedSides % 2;
+    double sheetCost = (fullDoubleSheets * baseDoublePrice) + (remainingSingleSides * baseSinglePrice);
+
+    int validCopies = state.copies > 0 ? state.copies : 1;
+    double docPrintCost = (sheetCost * validCopies) + bindingPrice;
+
+    return double.parse(docPrintCost.toStringAsFixed(2));
   }
 
   /// Calculate subtotal when multi-file grid collation is enabled.
@@ -713,8 +899,9 @@ class OrderNotifier extends Notifier<OrderState> {
 
     int totalPages = 0;
     for (final f in state.files) {
-      totalPages += f.pages > 0 ? f.pages : 1;
+      totalPages += parsePageRangeCount(f.pageRange, f.pages);
     }
+    if (totalPages < 1) totalPages = 1;
 
     int ppp = state.pagesPerPaper > 0 ? state.pagesPerPaper : state.files.length;
     int printedSides = (totalPages / ppp).ceil();
