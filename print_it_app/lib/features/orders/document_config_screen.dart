@@ -1426,35 +1426,36 @@ class _DocumentConfigScreenState extends ConsumerState<DocumentConfigScreen> {
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Row(
-                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                     children: [
-                                      Row(
-                                        children: [
-                                          const Icon(
-                                            Icons.filter_none_rounded,
-                                            size: 20,
-                                            color: Color(0xFF0284C7),
-                                          ),
-                                          const SizedBox(width: 8),
-                                          Text(
-                                            'Selective Page Printing (Optional)',
-                                            style: TextStyle(
-                                              color: isDark ? const Color(0xFFF1F5F9) : const Color(0xFF0F172A),
-                                              fontSize: 14,
-                                              fontWeight: FontWeight.w600,
-                                            ),
-                                          ),
-                                        ],
+                                      const Icon(
+                                        Icons.filter_none_rounded,
+                                        size: 20,
+                                        color: Color(0xFF0284C7),
                                       ),
-                                      Text(
-                                        'e.g. 1-5, 8, 11-14 or leave blank for All',
-                                        style: TextStyle(
-                                          color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
-                                          fontSize: 11,
-                                          fontWeight: FontWeight.w400,
+                                      const SizedBox(width: 8),
+                                      Expanded(
+                                        child: Text(
+                                          'Selective Page Printing (Optional)',
+                                          style: TextStyle(
+                                            color: isDark ? const Color(0xFFF1F5F9) : const Color(0xFF0F172A),
+                                            fontSize: 14,
+                                            fontWeight: FontWeight.w600,
+                                          ),
                                         ),
                                       ),
                                     ],
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Padding(
+                                    padding: const EdgeInsets.only(left: 28),
+                                    child: Text(
+                                      'e.g. 1-5, 8, 11-14 or leave blank for All',
+                                      style: TextStyle(
+                                        color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w400,
+                                      ),
+                                    ),
                                   ),
                                   const SizedBox(height: 12),
                                   Container(
