@@ -19,6 +19,9 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <meta content="IE=Edge" http-equiv="X-UA-Compatible">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate, max-age=0">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
   <meta name="description" content="PrintIt - Fast on-demand campus and document printing. Upload documents, customize print settings, pay securely, and collect instantly with zero queue time.">
   <meta name="theme-color" content="#0b1326">
   <meta property="og:title" content="PrintIt - On-Demand Document Printing">
@@ -138,7 +141,70 @@
       }
     });
     observer.observe(document.body, { childList: true, subtree: true });
+
+    // Unregister any legacy or active service workers and clear CacheStorage
+    // so every reload hits the network directly for the latest build.
+    (function purgeOldCachesAndWorkers() {
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.getRegistrations().then(function(registrations) {
+          for (var i = 0; i < registrations.length; i++) {
+            registrations[i].unregister().then(function(unregistered) {
+              if (unregistered) console.log('[PrintIt] Unregistered old ServiceWorker.');
+            });
+          }
+        }).catch(function(err) {
+          console.warn('[PrintIt] ServiceWorker unregister error:', err);
+        });
+      }
+
+      if ('caches' in window) {
+        caches.keys().then(function(keys) {
+          for (var i = 0; i < keys.length; i++) {
+            caches.delete(keys[i]);
+          }
+        }).catch(function(err) {
+          console.warn('[PrintIt] Caches delete error:', err);
+        });
+      }
+    })();
+
+    // Background watcher for newer deployments while the user keeps the portal open
+    (function setupDeploymentWatcher() {
+      var currentBuildNumber = null;
+      function checkLatestVersion() {
+        fetch('version.json?_t=' + Date.now(), { cache: 'no-store' })
+          .then(function(res) { return res.json(); })
+          .then(function(data) {
+            var build = data.build_number || data.version || data.build_id;
+            if (!currentBuildNumber) {
+              currentBuildNumber = build;
+            } else if (build && build !== currentBuildNumber) {
+              console.log('[PrintIt] New version detected (' + build + '). Reloading to latest release...');
+              window.location.reload(true);
+            }
+          })
+          .catch(function() {});
+      }
+
+      // Check on initial load
+      checkLatestVersion();
+      // Check when tab becomes visible again or every 5 minutes
+      document.addEventListener('visibilitychange', function() {
+        if (document.visibilityState === 'visible') {
+          checkLatestVersion();
+        }
+      });
+      setInterval(checkLatestVersion, 5 * 60 * 1000);
+    })();
   </script>
-  <script src="flutter_bootstrap.js" async></script>
+  <script>
+    // Dynamically inject flutter_bootstrap.js with cache-busting timestamp
+    (function loadBootstrap() {
+      var script = document.createElement('script');
+      script.src = 'flutter_bootstrap.js?_v=' + Date.now();
+      script.async = true;
+      document.body.appendChild(script);
+    })();
+  </script>
 </body>
 </html>
