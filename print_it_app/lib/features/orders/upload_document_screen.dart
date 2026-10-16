@@ -10,6 +10,8 @@ import 'package:syncfusion_flutter_pdf/pdf.dart';
 import '../../shared/widgets/ambient_background.dart';
 import '../../shared/widgets/glass_container.dart';
 import '../../core/api/api_client.dart';
+import '../../core/utils/app_file_picker.dart'
+    if (dart.library.html) '../../core/utils/app_file_picker_web.dart';
 import 'order_provider.dart';
 import 'widgets/office_doc_helper.dart';
 
@@ -74,15 +76,13 @@ class _UploadDocumentScreenState extends ConsumerState<UploadDocumentScreen>
   }
 
   Future<void> _pickFiles() async {
-    FilePickerResult? result = await FilePicker.platform.pickFiles(
-      type: FileType.custom,
+    final pickedFiles = await pickAppFiles(
       allowedExtensions: ['pdf', 'jpg', 'png', 'doc', 'docx', 'ppt', 'pptx', 'xls', 'xlsx'],
-      withData: true,
       allowMultiple: true,
     );
 
-    if (result != null && result.files.isNotEmpty) {
-      for (final file in result.files) {
+    if (pickedFiles != null && pickedFiles.isNotEmpty) {
+      for (final file in pickedFiles) {
         // Skip duplicates
         if (_uploadedFiles.any((f) => f.file.name == file.name && f.file.size == file.size)) {
           continue;
@@ -373,7 +373,6 @@ class _UploadDocumentScreenState extends ConsumerState<UploadDocumentScreen>
                         // Drop Zone
                         GestureDetector(
                           onTap: () {
-                            HapticFeedback.lightImpact();
                             _pickFiles();
                           },
                           child: GlassContainer(

@@ -4,8 +4,9 @@ import 'package:flutter/services.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:file_picker/file_picker.dart';
 import 'package:syncfusion_flutter_pdf/pdf.dart';
+import '../../core/utils/app_file_picker.dart'
+    if (dart.library.html) '../../core/utils/app_file_picker_web.dart';
 import 'order_provider.dart';
 import 'widgets/office_doc_helper.dart';
 
@@ -96,18 +97,16 @@ class _ExpressPickupScreenState extends ConsumerState<ExpressPickupScreen> with 
   }
 
   Future<void> _pickFiles() async {
-    FilePickerResult? result = await FilePicker.platform.pickFiles(
-      type: FileType.custom,
+    final pickedFiles = await pickAppFiles(
       allowedExtensions: ['pdf', 'jpg', 'png', 'docx', 'doc', 'ppt', 'pptx', 'xls', 'xlsx'],
       allowMultiple: true,
-      withData: true,
     );
 
-    if (result != null) {
+    if (pickedFiles != null && pickedFiles.isNotEmpty) {
       final currentFiles = ref.read(orderProvider).files;
       List<FileEntry> newEntries = List.from(currentFiles);
 
-      for (var file in result.files) {
+      for (var file in pickedFiles) {
         int pages = 1;
         final ext = file.extension?.toLowerCase() ?? '';
         if (ext == 'pdf') {
